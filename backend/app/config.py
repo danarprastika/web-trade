@@ -20,5 +20,19 @@ class Settings(BaseSettings):
     allow_credentials: bool = True
     log_level: str = "info"
 
+    # OAuth providers
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    github_client_id: str = ""
+    github_client_secret: str = ""
+    oauth_redirect_uri: str = "http://localhost:8000/api/v1/auth/oauth/{provider}/callback"
+
+    # Market data
+    binance_ws_base: str = "wss://stream.binance.com:9443"
+    binance_rest_base: str = "https://api.binance.com"
+    market_reconnect_delay: float = 1.0
+    market_reconnect_max_delay: float = 30.0
+    market_subscribed_symbols: list[str] = ["btcusdt", "ethusdt", "solusdt", "xrpusdt", "dogeusdt"]
+
 
 settings = Settings()

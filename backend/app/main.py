@@ -9,7 +9,7 @@ from structlog.stdlib import BoundLogger
 from sqlalchemy import text
 from app.config import settings
 from app.database import engine
-from app.routers import auth, health
+from app.routers import auth, health, market, oauth, watchlist
 
 structlog.configure(
     processors=[
@@ -78,7 +78,10 @@ def create_app() -> FastAPI:
             return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
     app.include_router(auth.router, prefix="/api/v1")
+    app.include_router(oauth.router, prefix="/api/v1")
     app.include_router(health.router, prefix="/api/v1")
+    app.include_router(watchlist.router, prefix="/api/v1")
+    app.include_router(market.router, prefix="/api/v1")
 
     return app
 

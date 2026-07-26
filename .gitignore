@@ -57,3 +57,4 @@ pnpm-debug.log*
 # Test artifacts
 backend/*.db
 test_*.db
+*.tsbuildinfo

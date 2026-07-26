@@ -19,3 +19,5 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 
     trading_accounts: Mapped[list["TradingAccount"]] = relationship("TradingAccount", back_populates="user", cascade="all, delete-orphan")
+    oauth_identities: Mapped[list["UserOAuth"]] = relationship("UserOAuth", back_populates="user", cascade="all, delete-orphan")
+    watchlists: Mapped[list["Watchlist"]] = relationship("Watchlist", back_populates="user", cascade="all, delete-orphan")

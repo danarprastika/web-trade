@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -62,18 +62,12 @@ async def login(
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_token(
     response: Response,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
     import app.config as config_module
 
-    cookie = response.headers.get("set-cookie")
-    token: str | None = None
-    if cookie:
-        for part in cookie.split(";"):
-            part = part.strip()
-            if part.startswith("refresh_token="):
-                token = part.split("=", 1)[1]
-                break
+    token = request.cookies.get("refresh_token")
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing refresh token")
     try:
