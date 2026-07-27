@@ -34,5 +34,8 @@ class Settings(BaseSettings):
     market_reconnect_max_delay: float = 30.0
     market_subscribed_symbols: list[str] = ["btcusdt", "ethusdt", "solusdt", "xrpusdt", "dogeusdt"]
 
+    # Paper trading / live trading
+    enable_live_trading: bool = False
+
 
 settings = Settings()

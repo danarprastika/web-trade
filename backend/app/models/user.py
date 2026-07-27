@@ -42,3 +42,18 @@ class User(Base):
     watchlists: Mapped[list[Watchlist]] = relationship(
         "Watchlist", back_populates="user", cascade="all, delete-orphan"
     )
+    strategies: Mapped[list["Strategy"]] = relationship(
+        "Strategy", back_populates="user", cascade="all, delete-orphan"
+    )  # noqa: F821,UP037
+    orders: Mapped[list["Order"]] = relationship(
+        "Order", back_populates="user", cascade="all, delete-orphan"
+    )  # noqa: F821,UP037
+    positions: Mapped[list["Position"]] = relationship(
+        "Position", back_populates="user", cascade="all, delete-orphan"
+    )  # noqa: F821,UP037
+    trades: Mapped[list["Trade"]] = relationship(
+        "Trade", back_populates="user", cascade="all, delete-orphan"
+    )  # noqa: F821,UP037
+    risk_profiles: Mapped[list["RiskProfile"]] = relationship(
+        "RiskProfile", back_populates="user", cascade="all, delete-orphan"
+    )  # noqa: F821,UP037

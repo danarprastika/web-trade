@@ -61,3 +61,57 @@ async def client(db_session: AsyncSession):
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
+
+
+@pytest_asyncio.fixture
+async def authenticated_client(client: AsyncClient):
+    # Register and login a test user
+    payload = {
+        "email": "trader@quantx.ai",
+        "username": "trader1",
+        "password": "securepass1",
+        "password_confirm": "securepass1",
+    }
+    await client.post("/api/v1/auth/register", json=payload)
+    login_resp = await client.post(
+        "/api/v1/auth/login",
+        data={"username": payload["email"], "password": payload["password"]},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    tokens = login_resp.json()
+    client.headers["Authorization"] = f"Bearer {tokens['access_token']}"
+    return client
+
+
+@pytest_asyncio.fixture
+async def setup_account(db_session: AsyncSession, authenticated_client: AsyncClient):
+    # Create a paper trading account for the user
+    from sqlalchemy import select
+
+    from app.models.trading_account import AccountStatus, AccountType, TradingAccount
+    from app.models.user import User
+
+    result = await db_session.execute(select(User).where(User.email == "trader@quantx.ai"))
+    user = result.scalar_one_or_none()
+    assert user is not None
+
+    account = TradingAccount(
+        user_id=user.id,
+        name="Test Paper Account",
+        account_type=AccountType.PAPER,
+        status=AccountStatus.ACTIVE,
+        balance=10000.0,
+    )
+    db_session.add(account)
+    await db_session.commit()
+    await db_session.refresh(account)
+
+    # Create risk profile
+    from app.models.risk_profile import RiskProfile
+
+    profile = RiskProfile(user_id=user.id, account_id=account.id)
+    db_session.add(profile)
+    await db_session.commit()
+    await db_session.refresh(profile)
+
+    return {"user": user, "account": account, "profile": profile}
