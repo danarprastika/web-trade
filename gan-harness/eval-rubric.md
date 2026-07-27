@@ -1,60 +1,57 @@
-# QuantX AI — Sprint 1 Evaluation Rubric
+# QuantX AI — Sprint 4 Evaluation Rubric
 
 ## Testable Pass/Fail Criteria
 
-### Criterion 1: Migration from Empty Database
-- **Command:** `cd backend && alembic upgrade head`
-- **Database:** PostgreSQL running on localhost:5432, empty database `quantx_dev`
-- **Pass:** Command exits 0, tables `users`, `trading_accounts`, `assets`, `alembic_version` exist
-- **Pass:** Running `alembic upgrade head` a second time is idempotent (no errors)
-- **Fail:** Any SQL error, missing table, or duplicate constraint violation
+### Criterion 1: News CRUD and Pagination
+- **Test 1:** `POST /api/v1/news/sources` with valid data → 201
+- **Test 2:** `POST /api/v1/news` with valid article data → 201
+- **Test 3:** `GET /api/v1/news` → 200, returns list with pagination fields
+- **Test 4:** `GET /api/v1/news/{id}` → 200, returns correct article
+- **Test 5:** `GET /api/v1/news/999999` → 404
+- **Test 6:** `POST /api/v1/news` with invalid data → 422
+- **Pass:** All 6 tests pass via actual pytest execution
+- **Fail:** Any test fails or was not executed
 
-### Criterion 2: User Registration → Login → Valid JWT
-- **Test 1:** `POST /api/v1/auth/register` with valid email, username, password, password_confirm
-  - Returns 201
-  - Response contains user id, email (NOT password hash)
-- **Test 2:** `POST /api/v1/auth/login` with same email/password
-  - Returns 200
-  - Response contains `access_token`, `refresh_token`
-- **Test 3:** `GET /api/v1/auth/me` with `Authorization: Bearer <access_token>`
-  - Returns 200
-  - Response contains user data matching registered user
-- **Test 4:** Invalid password returns 401
-- **Test 5:** Duplicate email returns 400 with appropriate error
-- **Pass:** All 5 tests pass via actual pytest execution (not code reading)
-- **Fail:** Any test fails, or tests were written but not executed
+### Criterion 2: Technical Analysis Indicators Are Numerically Correct
+- **Test 1:** Given prices [10, 20, 30, 40, 50], SMA(3) last value = 40
+- **Test 2:** Given prices [10, 20, 30, 40, 50], EMA(3) last value matches expected formula
+- **Test 3:** Given prices with up/down sequence, RSI(2) returns value between 0 and 100
+- **Test 4:** `GET /api/v1/analysis/indicators/{symbol}` returns dict with `sma`, `ema`, `rsi` keys
+- **Test 5:** `GET /api/v1/analysis/signals/{symbol}` returns `signal` field with value `buy`|`sell`|`hold`
+- **Pass:** All 5 tests pass with exact numeric assertions
+- **Fail:** Any test fails, uses hardcoded stubs without real math, or was not executed
 
-### Criterion 3: GitHub Actions Green on Latest Commit
-- **Check:** Latest commit triggers GitHub Actions workflow
+### Criterion 3: Dashboard Enriched with Intelligence Data
+- **Test 1:** `GET /api/v1/dashboard` returns `latest_news` array with ≤ 5 items
+- **Test 2:** `GET /api/v1/dashboard` returns `technical_signals` array
+- **Test 3:** Frontend `/dashboard` renders without runtime errors and includes NewsWidget and AnalysisWidget
+- **Pass:** Backend tests pass and frontend renders widgets
+- **Fail:** Dashboard missing new fields, or frontend crashes
+
+### Criterion 4: News Frontend Page Works
+- **Test 1:** Navigate to `/news` → page loads, shows "News" heading
+- **Test 2:** When backend has articles, NewsFeed renders ≥ 1 NewsCard
+- **Test 3:** Clicking a NewsCard link opens article URL
+- **Pass:** All 3 checks pass via Playwright or component test
+- **Fail:** Page 500s, empty state is broken, or links are inert
+
+### Criterion 5: GitHub Actions Green on Sprint 4 Commit
 - **Jobs:**
   - `lint-backend`: `ruff check .` passes
   - `format-backend`: `ruff format --check .` passes
-  - `test-backend`: `pytest` passes with coverage >= 80%
+  - `test-backend`: `pytest` passes with new tests included
   - `lint-frontend`: `npm run lint` passes
-  - `test-frontend`: `npm test` passes
-- **Pass:** All jobs show green on the commit checked out for this evaluation
-- **Fail:** Any job red, skipped, or not present
-
-### Criterion 4: Health Check Detects Real Database Failure
-- **Test 1:** `GET /health/ready` with database connected
-  - Returns 200
-  - JSON: `{"status": "healthy", "checks": {"database": {"status": "healthy", "latency_ms": <number>}}}`
-- **Test 2:** Stop PostgreSQL, then call `GET /health/ready`
-  - Returns 503 (not 200)
-  - JSON: `{"status": "unhealthy", "checks": {"database": {"status": "unhealthy", "message": ...}}}`
-  - Pass if the word "database" appears in the response and status is NOT "healthy"
-- **Pass:** Both tests pass via actual pytest + Docker/process management
-- **Fail:** Health endpoint returns 200 when DB is down, or returns static "ok" without real DB call
+- **Pass:** All jobs show green on Sprint 4 commit
+- **Fail:** Any job red
 
 ## Scoring
 - Each criterion is binary: PASS or FAIL
-- Sprint 1 is complete only when ALL 4 criteria pass
+- Sprint 4 is complete only when ALL 5 criteria pass
 - A test that compiles but is not executed does NOT count as PASS
 
 ## Anti-Patterns (Automatic Failures)
-- Using `create_all` in production code instead of Alembic migrations
-- Storing JWT in localStorage instead of httpOnly cookies
-- Health endpoint returning hardcoded `{"status": "ok"}`
-- Placeholder tests like `pass` or `assert True`
-- Hardcoded secrets in source code
-- Missing input validation on registration (email format, password length)
+- Hardcoded indicator values instead of real math
+- News articles stored as JSON blob without proper schema
+- Frontend page using `any` types or broken accessibility
+- Missing pagination on news list
+- Dashboard widgets that render fake/placeholder data when API is empty
