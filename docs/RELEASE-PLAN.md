@@ -148,3 +148,43 @@
 - Exchange WebSocket credentials/env handling should be formalized
 - Next.js middleware for auth protection on protected routes is still missing
 - Fase 2 (Intelligence): News Intelligence, Market Intelligence, Technical Analysis Engine
+
+---
+
+## Fase 2 — Intelligence Layer (Sprint 4)
+
+**Status:** Complete
+
+### Items
+- [x] Backend news models: `NewsSource`, `NewsArticle`
+- [x] Alembic migration `004_add_news`
+- [x] News service: CRUD + list with pagination
+- [x] News router: `/api/v1/news`, `/api/v1/news/sources`
+- [x] Analysis service: SMA, EMA, RSI calculations + signal generation
+- [x] Analysis router: `/api/v1/analysis/indicators/{symbol}`, `/api/v1/analysis/signals/{symbol}`
+- [x] Dashboard enriched with `latest_news` and `technical_signals`
+- [x] Frontend: `/news` page with NewsCard component
+- [x] Frontend: dashboard NewsWidget and AnalysisWidget
+- [x] 68 backend tests passing (includes 6 news + 8 analysis tests)
+
+### DoD Checklist
+- [x] `pytest` passes with 68 tests green locally
+- [x] `ruff check .` and `ruff format --check .` both pass
+- [x] `npm run lint` passes
+- [x] `npm run typecheck` passes
+- [x] GitHub Actions CI passes
+
+### What Changed
+- Backend: added 2 new models, 2 new schemas, 2 new services, 2 new routers
+- Backend: added Alembic migration 004
+- Backend: extended `MarketConnectionManager` with price history for analysis
+- Backend: extended dashboard summary with news and signals
+- Backend: 14 new tests (6 news + 8 analysis)
+- Frontend: added `/news` page and `NewsCard` component
+- Frontend: added NewsWidget and AnalysisWidget to dashboard
+
+### Notes for Sprint 5
+- News ingestion is manual via API; real RSS/API integration is future work
+- Technical analysis uses cached WebSocket prices; backtesting data source is future work
+- Market Intelligence module is still pending per VISION.md Fase 2
+- Frontend component tests are not yet implemented (jest configured but no tests)

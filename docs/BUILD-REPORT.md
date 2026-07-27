@@ -137,3 +137,46 @@ alembic upgrade head
 - `app.config.settings` imported at module level in several routers; tests monkeypatch carefully
 - Next.js middleware for auth protection on dashboard/strategies routes is pending
 - Fase 2 (Intelligence): News Intelligence, Market Intelligence, Technical Analysis Engine
+
+## Sprint 4 Build Report
+
+### What Was Built
+- **Backend:**
+  - News module: `NewsSource`, `NewsArticle` models + Alembic migration 004
+  - News service: CRUD with pagination
+  - News router: `/api/v1/news`, `/api/v1/news/sources`
+  - Analysis service: SMA, EMA, RSI indicator calculations with signal generation
+  - Analysis router: `/api/v1/analysis/indicators/{symbol}`, `/api/v1/analysis/signals/{symbol}`
+  - Extended `MarketConnectionManager` with price history cache for analysis
+  - Extended dashboard summary endpoint with `latest_news` and `technical_signals`
+- **Frontend:**
+  - `/news` page with NewsCard component
+  - NewsWidget and AnalysisWidget integrated into dashboard
+- **Tests:** 14 new tests (6 news + 8 analysis), total 68 passing
+
+### Test Results
+- **Backend pytest:** 68 passed
+- **Ruff lint:** clean
+- **Frontend lint:** passes
+- **Frontend typecheck:** passes
+
+### Assumptions & Decisions
+- News ingestion is manual via API for now; real RSS/news API integration deferred
+- Technical analysis reads from in-memory WebSocket price history
+- Signals use simple RSI + SMA/EMA crossover rules; more sophisticated strategies are future work
+- No new frontend dependencies added for Sprint 4
+
+### Security Findings & Resolutions
+- All news endpoints protected by JWT auth
+- Input validation via Pydantic schemas
+- No SQL injection risks (SQLAlchemy parameterized queries)
+
+### Manual Switches Left OFF
+- Real news source ingestion (RSS/API polling)
+- Advanced AI engines (Sentiment, Whale Tracking)
+- Frontend component tests (jest configured but no tests yet)
+
+### Open Follow-ups
+- Market Intelligence module still pending per VISION.md Fase 2
+- Next.js auth middleware still pending
+- Backtesting data source for analysis engine is future work
