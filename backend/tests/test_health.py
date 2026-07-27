@@ -1,13 +1,12 @@
 import pytest
-import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-
-from app.main import create_app
-from app.database import Base, get_db
-from app.config import Settings
-import app.database as db_module
-import app.config as config_module
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+import app.config as config_module
+import app.database as db_module
+from app.config import Settings
+from app.database import get_db
+from app.main import create_app
 
 
 @pytest.mark.anyio
@@ -31,15 +30,20 @@ async def test_health_ready(client: AsyncClient):
 
 @pytest.mark.anyio
 async def test_health_ready_database_failure(monkeypatch):
-    import asyncio
 
     url = f"sqlite+aiosqlite:///./test_{__import__('uuid').uuid4().hex}.db"
-    test_settings = Settings(database_url=url, secret_key="test-secret-key-for-testing-only", environment="test")
+    test_settings = Settings(
+        database_url=url, secret_key="test-secret-key-for-testing-only", environment="test"
+    )
     monkeypatch.setattr(config_module, "settings", test_settings)
 
     await db_module.engine.dispose()
-    db_module.engine = create_async_engine(test_settings.database_url, echo=False, pool_pre_ping=True)
-    db_module.AsyncSessionLocal = async_sessionmaker(db_module.engine, expire_on_commit=False, class_=AsyncSession)
+    db_module.engine = create_async_engine(
+        test_settings.database_url, echo=False, pool_pre_ping=True
+    )
+    db_module.AsyncSessionLocal = async_sessionmaker(
+        db_module.engine, expire_on_commit=False, class_=AsyncSession
+    )
 
     app = create_app()
 

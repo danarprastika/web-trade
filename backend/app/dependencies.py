@@ -13,6 +13,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=F
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     from app.database import AsyncSessionLocal
+
     async with AsyncSessionLocal() as session:
         try:
             yield session
@@ -35,7 +36,9 @@ async def get_current_user(
     if token is None:
         raise credentials_exception
     try:
-        payload = jwt.decode(token, config_module.settings.secret_key, algorithms=[config_module.settings.algorithm])
+        payload = jwt.decode(
+            token, config_module.settings.secret_key, algorithms=[config_module.settings.algorithm]
+        )
         subject = payload.get("sub")
         if subject is None:
             raise credentials_exception

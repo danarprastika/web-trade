@@ -2,8 +2,8 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
+from app.database import get_db
 from app.main import create_app
-from app.database import Base, get_db
 
 
 @pytest_asyncio.fixture

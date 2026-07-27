@@ -1,4 +1,5 @@
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
+
 from jose import jwt
 from passlib.context import CryptContext
 from sqlalchemy import select
@@ -43,6 +44,7 @@ class UserService:
         if user is None or not pwd_context.verify(password, user.hashed_password):
             return None
         import app.config as config_module
+
         expire = datetime.now(UTC) + timedelta(
             minutes=config_module.settings.access_token_expire_minutes
         )
@@ -54,6 +56,7 @@ class UserService:
 
     def create_refresh_token(self, user_id: int) -> str:
         import app.config as config_module
+
         expire = datetime.now(UTC) + timedelta(
             minutes=config_module.settings.refresh_token_expire_minutes
         )
@@ -65,6 +68,7 @@ class UserService:
 
     def create_access_token(self, user_id: int) -> str:
         import app.config as config_module
+
         expire = datetime.now(UTC) + timedelta(
             minutes=config_module.settings.access_token_expire_minutes
         )

@@ -1,9 +1,7 @@
-from datetime import datetime, timedelta, UTC
-from typing import Literal
-from urllib.parse import urlencode
+import secrets
+from datetime import UTC, datetime, timedelta
 
 import httpx
-import secrets
 from jose import jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,8 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models.user import User
 from app.models.user_oauth import UserOAuth
-from app.schemas.user import UserCreate, UserResponse
-from app.services.user_service import UserService, pwd_context
+from app.schemas.user import UserResponse
+from app.services.user_service import pwd_context
 
 
 class OAuthError(Exception):
@@ -23,7 +21,9 @@ class OAuthService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def authenticate(self, provider: str, code: str, redirect_uri: str | None = None) -> tuple[UserResponse, str]:
+    async def authenticate(
+        self, provider: str, code: str, redirect_uri: str | None = None
+    ) -> tuple[UserResponse, str]:
         if provider not in ("google", "github"):
             raise OAuthError("Unsupported OAuth provider")
 
@@ -40,7 +40,8 @@ class OAuthService:
             "code": code,
             "client_id": settings.google_client_id,
             "client_secret": settings.google_client_secret,
-            "redirect_uri": redirect_uri or settings.oauth_redirect_uri.replace("{provider}", "google"),
+            "redirect_uri": redirect_uri
+            or settings.oauth_redirect_uri.replace("{provider}", "google"),
             "grant_type": "authorization_code",
         }
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -67,7 +68,8 @@ class OAuthService:
             "code": code,
             "client_id": settings.github_client_id,
             "client_secret": settings.github_client_secret,
-            "redirect_uri": redirect_uri or settings.oauth_redirect_uri.replace("{provider}", "github"),
+            "redirect_uri": redirect_uri
+            or settings.oauth_redirect_uri.replace("{provider}", "github"),
         }
         async with httpx.AsyncClient(timeout=10.0) as client:
             token_resp = await client.post(token_url, headers=headers, data=data)
@@ -155,12 +157,19 @@ class OAuthService:
             await self.db.refresh(oauth_identity)
 
         access_token = jwt.encode(
-            {"sub": str(user.id), "exp": datetime.now(UTC) + timedelta(minutes=settings.access_token_expire_minutes)},
+            {
+                "sub": str(user.id),
+                "exp": datetime.now(UTC) + timedelta(minutes=settings.access_token_expire_minutes),
+            },
             settings.secret_key,
             algorithm=settings.algorithm,
         )
         refresh_token = jwt.encode(
-            {"sub": str(user.id), "type": "refresh", "exp": datetime.now(UTC) + timedelta(minutes=settings.refresh_token_expire_minutes)},
+            {
+                "sub": str(user.id),
+                "type": "refresh",
+                "exp": datetime.now(UTC) + timedelta(minutes=settings.refresh_token_expire_minutes),
+            },
             settings.secret_key,
             algorithm=settings.algorithm,
         )

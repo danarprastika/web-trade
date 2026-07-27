@@ -1,6 +1,4 @@
-from typing import Sequence
-
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,7 +12,11 @@ class WatchlistService:
         self.db = db
 
     async def list(self, user_id: int) -> list[WatchlistResponse]:
-        stmt = select(Watchlist).where(Watchlist.user_id == user_id).order_by(Watchlist.created_at.desc())
+        stmt = (
+            select(Watchlist)
+            .where(Watchlist.user_id == user_id)
+            .order_by(Watchlist.created_at.desc())
+        )
         result = await self.db.execute(stmt)
         watchlists = result.scalars().all()
         return [WatchlistResponse.model_validate(item) for item in watchlists]
@@ -30,7 +32,7 @@ class WatchlistService:
             await self.db.commit()
         except IntegrityError:
             await self.db.rollback()
-            raise ValueError("Asset already in watchlist")
+            raise ValueError("Asset already in watchlist") from None
         await self.db.refresh(watchlist)
         return WatchlistResponse.model_validate(watchlist)
 

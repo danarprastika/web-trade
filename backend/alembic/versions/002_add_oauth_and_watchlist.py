@@ -21,7 +21,9 @@ def upgrade() -> None:
     op.create_table(
         "user_oauth",
         sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        ),
         sa.Column("provider", sa.String(50), nullable=False),
         sa.Column("provider_user_id", sa.String(255), nullable=False),
         sa.Column("provider_email", sa.String(255), nullable=False),
@@ -49,8 +51,12 @@ def upgrade() -> None:
     op.create_table(
         "watchlists",
         sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("asset_id", sa.Integer(), sa.ForeignKey("assets.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        ),
+        sa.Column(
+            "asset_id", sa.Integer(), sa.ForeignKey("assets.id", ondelete="CASCADE"), nullable=False
+        ),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),

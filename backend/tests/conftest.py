@@ -1,7 +1,5 @@
-import asyncio
 import uuid
 
-import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -13,19 +11,27 @@ from app.main import create_app
 
 def _make_test_settings() -> Settings:
     url = f"sqlite+aiosqlite:///./test_{uuid.uuid4().hex}.db"
-    return Settings(database_url=url, secret_key="test-secret-key-for-testing-only", environment="test")
+    return Settings(
+        database_url=url, secret_key="test-secret-key-for-testing-only", environment="test"
+    )
 
 
 @pytest_asyncio.fixture(autouse=True)
 async def setup_env(monkeypatch):
     test_settings = _make_test_settings()
     import app.config as config_module
+
     monkeypatch.setattr(config_module, "settings", test_settings)
 
     import app.database as db_module
+
     await db_module.engine.dispose()
-    db_module.engine = create_async_engine(test_settings.database_url, echo=False, pool_pre_ping=True)
-    db_module.AsyncSessionLocal = async_sessionmaker(db_module.engine, expire_on_commit=False, class_=AsyncSession)
+    db_module.engine = create_async_engine(
+        test_settings.database_url, echo=False, pool_pre_ping=True
+    )
+    db_module.AsyncSessionLocal = async_sessionmaker(
+        db_module.engine, expire_on_commit=False, class_=AsyncSession
+    )
 
     async with db_module.engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -38,6 +44,7 @@ async def setup_env(monkeypatch):
 @pytest_asyncio.fixture
 async def db_session():
     import app.database as db_module
+
     async with db_module.AsyncSessionLocal() as session:
         yield session
         await session.rollback()

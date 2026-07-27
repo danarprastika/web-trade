@@ -1,7 +1,9 @@
-import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
-from app.services.oauth_service import OAuthError, OAuthService
+import pytest
+from httpx import AsyncClient
+
+from app.services.oauth_service import OAuthService
 
 
 @pytest.mark.anyio
@@ -39,7 +41,9 @@ async def test_oauth_service_google_creates_user(db_session):
 
     service = OAuthService(db_session)
     with patch.object(service, "_exchange_google", return_value=profile):
-        user, access_token, refresh_token = await service.authenticate("google", "abc123", "http://test/callback")
+        user, access_token, refresh_token = await service.authenticate(
+            "google", "abc123", "http://test/callback"
+        )
 
     assert user.email == "oauthuser@example.com"
     assert access_token is not None

@@ -1,9 +1,10 @@
 import asyncio
+import contextlib
 import json
 import logging
 from asyncio import Lock
-from datetime import datetime, timezone
-from typing import Callable
+from collections.abc import Callable
+from datetime import UTC, datetime
 
 import websockets
 from websockets.client import WebSocketClientProtocol
@@ -46,10 +47,8 @@ class MarketConnectionManager:
         self._stop_event.set()
         if self._task is not None:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
         async with self._lock:
             if self._connection and not self._connection.closed:
                 await self._connection.close()
@@ -67,7 +66,9 @@ class MarketConnectionManager:
             if self._stop_event.is_set():
                 break
             await asyncio.sleep(self._reconnect_delay)
-            self._reconnect_delay = min(self._reconnect_delay * 2, settings.market_reconnect_max_delay)
+            self._reconnect_delay = min(
+                self._reconnect_delay * 2, settings.market_reconnect_max_delay
+            )
 
     async def _connect_and_listen(self) -> None:
         streams = [f"{sym}@miniTicker" for sym in settings.market_subscribed_symbols]
@@ -103,7 +104,7 @@ class MarketConnectionManager:
             "high": float(ticker.get("h", 0)),
             "low": float(ticker.get("l", 0)),
             "volume": float(ticker.get("v", 0)),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
         for callback in list(callbacks):
             try:

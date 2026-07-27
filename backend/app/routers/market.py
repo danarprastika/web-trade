@@ -1,11 +1,9 @@
 import logging
-from typing import Annotated
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.dependencies import get_current_active_user
 from app.models.user import User
 from app.services.market_service import market_manager
 
@@ -34,13 +32,17 @@ async def market_ws(
     if auth_header.startswith("Bearer "):
         token = auth_header[7:]
         try:
-            from app.dependencies import get_current_user
-            from fastapi import Depends
             # We can't use FastAPI Depends in WebSocket directly easily,
             # so we do manual token validation here
-            import app.config as config_module
             from jose import JWTError, jwt
-            payload = jwt.decode(token, config_module.settings.secret_key, algorithms=[config_module.settings.algorithm])
+
+            import app.config as config_module
+
+            payload = jwt.decode(
+                token,
+                config_module.settings.secret_key,
+                algorithms=[config_module.settings.algorithm],
+            )
             subject = payload.get("sub")
             if subject:
                 user = await db.get(User, int(subject))
@@ -57,6 +59,7 @@ async def market_ws(
     def on_price(payload: dict) -> None:
         try:
             import asyncio
+
             if connection_active:
                 asyncio.create_task(websocket.send_json(payload))
         except Exception as exc:
@@ -83,13 +86,17 @@ async def market_ws(
                 for sym in subscribed_symbols - symbols:
                     market_manager.unsubscribe(sym, on_price)
                     subscribed_symbols.discard(sym)
-                await websocket.send_json({"type": "subscribed", "symbols": sorted(subscribed_symbols)})
+                await websocket.send_json(
+                    {"type": "subscribed", "symbols": sorted(subscribed_symbols)}
+                )
             elif msg_type == "unsubscribe":
                 symbols = {s.lower() for s in data.get("symbols", [])}
                 for sym in symbols & subscribed_symbols:
                     market_manager.unsubscribe(sym, on_price)
                     subscribed_symbols.discard(sym)
-                await websocket.send_json({"type": "subscribed", "symbols": sorted(subscribed_symbols)})
+                await websocket.send_json(
+                    {"type": "subscribed", "symbols": sorted(subscribed_symbols)}
+                )
     except WebSocketDisconnect:
         pass
     except Exception as exc:

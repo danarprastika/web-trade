@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.user import User
-from app.schemas.user import UserCreate, UserResponse, TokenResponse
+from app.schemas.user import TokenResponse, UserCreate, UserResponse
 from app.services.user_service import DuplicateUserError, UserService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -22,11 +22,15 @@ async def register(
     service = UserService(db)
     existing = await service.get_by_email(payload.email)
     if existing:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
+        )
     try:
         user = await service.create(payload)
     except DuplicateUserError as err:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered") from err
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
+        ) from err
     return UserResponse.model_validate(user)
 
 
@@ -37,6 +41,7 @@ async def login(
     db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
     import app.config as config_module
+
     service = UserService(db)
     access_token = await service.authenticate(form_data.username, form_data.password)
     if access_token is None:
@@ -69,20 +74,30 @@ async def refresh_token(
 
     token = request.cookies.get("refresh_token")
     if not token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing refresh token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing refresh token"
+        )
     try:
-        payload = jwt.decode(token, config_module.settings.secret_key, algorithms=[config_module.settings.algorithm])
+        payload = jwt.decode(
+            token, config_module.settings.secret_key, algorithms=[config_module.settings.algorithm]
+        )
         user_id = int(payload.get("sub"))
         token_type = payload.get("type")
         if token_type != "refresh":
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type"
+            )
     except (JWTError, TypeError, ValueError) as err:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token") from err
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token"
+        ) from err
 
     service = UserService(db)
     user = await db.get(User, user_id)
     if user is None or not user.is_active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive"
+        )
 
     new_access = service.create_access_token(user.id)
     new_refresh = service.create_refresh_token(user.id)

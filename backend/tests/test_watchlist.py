@@ -1,15 +1,15 @@
 import pytest
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from httpx import AsyncClient
 
 from app.models.asset import Asset
-from app.models.user import User
-from app.services.watchlist_service import WatchlistService
 
 
 @pytest.mark.anyio
 async def test_watchlist_crud(client: AsyncClient, db_session):
     # Create an asset directly
-    asset = Asset(symbol="btcusdt", name="Bitcoin", asset_class="crypto", exchange="binance", currency="USD")
+    asset = Asset(
+        symbol="btcusdt", name="Bitcoin", asset_class="crypto", exchange="binance", currency="USD"
+    )
     db_session.add(asset)
     await db_session.commit()
     await db_session.refresh(asset)

@@ -1,9 +1,9 @@
 from typing import Annotated
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from urllib.parse import urlencode
 
 from app.database import get_db
 from app.schemas.user import TokenResponse
@@ -21,10 +21,15 @@ async def oauth_redirect(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported provider")
 
     import app.config as config_module
+
     if provider == "google" and not config_module.settings.google_client_id:
-        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Google OAuth not configured")
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Google OAuth not configured"
+        )
     if provider == "github" and not config_module.settings.github_client_id:
-        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="GitHub OAuth not configured")
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="GitHub OAuth not configured"
+        )
 
     redirect_uri = str(request.url_for("oauth_callback", provider=provider))
     if provider == "google":
@@ -56,7 +61,9 @@ async def oauth_callback(
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     if code is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing authorization code")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Missing authorization code"
+        )
 
     redirect_uri = str(request.url_for("oauth_callback", provider=provider))
     service = OAuthService(db)
@@ -66,7 +73,10 @@ async def oauth_callback(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err)) from err
 
     import app.config as config_module
-    content = TokenResponse(access_token=access_token, refresh_token=refresh_token).model_dump_json()
+
+    content = TokenResponse(
+        access_token=access_token, refresh_token=refresh_token
+    ).model_dump_json()
     response = JSONResponse(content=content, media_type="application/json")
     response.set_cookie(
         key="refresh_token",
