@@ -8,10 +8,12 @@ from sqlalchemy import text
 from structlog.stdlib import BoundLogger
 
 from app.routers import (
+    analysis,
     auth,
     dashboard,
     health,
     market,
+    news,
     oauth,
     orders,
     positions,
@@ -100,6 +102,8 @@ def create_app() -> FastAPI:
     app.include_router(trades.router, prefix="/api/v1")
     app.include_router(risk.router, prefix="/api/v1")
     app.include_router(dashboard.router, prefix="/api/v1")
+    app.include_router(news.router, prefix="/api/v1")
+    app.include_router(analysis.router, prefix="/api/v1")
 
     return app
 

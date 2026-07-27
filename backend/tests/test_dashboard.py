@@ -123,3 +123,7 @@ async def test_dashboard_summary(auth_client: AsyncClient, setup_dashboard):
     assert data["open_positions"][0]["unrealized_pnl"] == 5.0
 
     assert len(data["recent_trades"]) >= 1
+    assert "latest_news" in data
+    assert "technical_signals" in data
+    assert isinstance(data["latest_news"], list)
+    assert isinstance(data["technical_signals"], list)

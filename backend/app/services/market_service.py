@@ -3,6 +3,7 @@ import contextlib
 import json
 import logging
 from asyncio import Lock
+from collections import deque
 from collections.abc import Callable
 from datetime import UTC, datetime
 
@@ -23,6 +24,8 @@ class MarketConnectionManager:
         self._lock = Lock()
         self._reconnect_delay = settings.market_reconnect_delay
         self._task: asyncio.Task | None = None
+        self._price_history: dict[str, deque[float]] = {}
+        self._max_history: int = 200
 
     def subscribe(self, symbol: str, callback: Callable[[dict], None]) -> None:
         self._subscribers.setdefault(symbol.lower(), set()).add(callback)
@@ -97,20 +100,31 @@ class MarketConnectionManager:
         callbacks = self._subscribers.get(symbol, set())
         if not callbacks:
             return
+        price = float(ticker.get("c", 0))
         payload = {
             "symbol": symbol,
-            "price": float(ticker.get("c", 0)),
+            "price": price,
             "open": float(ticker.get("o", 0)),
             "high": float(ticker.get("h", 0)),
             "low": float(ticker.get("l", 0)),
             "volume": float(ticker.get("v", 0)),
             "timestamp": datetime.now(UTC).isoformat(),
         }
+        # Store price history for analysis endpoints
+        history = self._price_history.setdefault(symbol, deque(maxlen=self._max_history))
+        if price > 0:
+            history.append(price)
         for callback in list(callbacks):
             try:
                 callback(payload)
             except Exception as exc:
                 logger.error("Market callback error", exc_info=exc)
+
+    def get_recent_prices(self, symbol: str, limit: int = 50) -> list[float]:
+        history = self._price_history.get(symbol.lower())
+        if not history:
+            return []
+        return list(history)[-limit:]
 
 
 market_manager = MarketConnectionManager()

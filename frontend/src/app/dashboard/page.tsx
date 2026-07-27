@@ -35,6 +35,20 @@ interface Trade {
   executed_at: string
 }
 
+interface NewsItem {
+  id: number
+  title: string
+  url: string
+  published_at: string | null
+}
+
+interface SignalItem {
+  symbol: string
+  signal: string
+  sma_20: number | null
+  rsi_14: number | null
+}
+
 interface Portfolio {
   balance: number
   total_unrealized_pnl: number
@@ -48,6 +62,8 @@ interface DashboardState {
   portfolio: Portfolio | null
   positions: Position[]
   trades: Trade[]
+  news: NewsItem[]
+  signals: SignalItem[]
   loading: boolean
   error: string | null
 }
@@ -58,6 +74,8 @@ export default function DashboardPage() {
     portfolio: null,
     positions: [],
     trades: [],
+    news: [],
+    signals: [],
     loading: true,
     error: null,
   })
@@ -85,6 +103,8 @@ export default function DashboardPage() {
         portfolio: dashData.portfolio,
         positions: dashData.open_positions,
         trades: dashData.recent_trades,
+        news: dashData.latest_news || [],
+        signals: dashData.technical_signals || [],
         loading: false,
         error: null,
       })
@@ -94,6 +114,8 @@ export default function DashboardPage() {
         portfolio: null,
         positions: [],
         trades: [],
+        news: [],
+        signals: [],
         loading: false,
         error: err instanceof Error ? err.message : 'Failed to load dashboard',
       })
@@ -294,6 +316,65 @@ export default function DashboardPage() {
         <p className="text-xs text-muted-foreground">
           QuantX AI is in paper-trading mode. No real money or live trading is active.
         </p>
+
+        <section className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-lg border p-6">
+            <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">News Intelligence</h2>
+            {state.news.length > 0 ? (
+              <div className="mt-4 space-y-3">
+                {state.news.map((item) => (
+                  <a
+                    key={item.id}
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block rounded-md p-3 transition-colors hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <p className="text-sm font-medium leading-snug hover:underline">{item.title}</p>
+                    {item.published_at && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {new Date(item.published_at).toLocaleString()}
+                      </p>
+                    )}
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-muted-foreground">No news articles yet.</p>
+            )}
+          </div>
+
+          <div className="rounded-lg border p-6">
+            <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Technical Analysis</h2>
+            {state.signals.length > 0 ? (
+              <div className="mt-4 space-y-3">
+                {state.signals.map((s) => (
+                  <div key={s.symbol} className="flex items-center justify-between rounded-md p-3">
+                    <div>
+                      <p className="font-mono text-sm font-medium uppercase">{s.symbol}</p>
+                      <p className="text-xs text-muted-foreground">
+                        SMA20: {s.sma_20?.toFixed(2) ?? '-'} · RSI14: {s.rsi_14?.toFixed(1) ?? '-'}
+                      </p>
+                    </div>
+                    <span
+                      className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
+                        s.signal === 'buy'
+                          ? 'bg-green-500/10 text-green-400'
+                          : s.signal === 'sell'
+                            ? 'bg-red-500/10 text-red-400'
+                            : 'bg-muted text-muted-foreground'
+                      }`}
+                    >
+                      {s.signal.toUpperCase()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-muted-foreground">Add assets to your watchlist to see signals.</p>
+            )}
+          </div>
+        </section>
       </main>
     </div>
   )
