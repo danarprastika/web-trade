@@ -180,3 +180,18 @@ alembic upgrade head
 - Market Intelligence module still pending per VISION.md Fase 2
 - Next.js auth middleware still pending
 - Backtesting data source for analysis engine is future work
+
+## Sprint 4 CI Repair
+
+### What Was Fixed
+- Added `python-multipart` to `[project.optional-dependencies]` group `test` in `backend/pyproject.toml`
+- Updated `.github/workflows/ci.yml` `test-backend` job to use `python -m pytest` instead of bare `pytest`
+- Added explicit `pip install python-multipart` step in CI `test-backend` job
+- Fixed missing `from datetime import datetime` in `backend/app/services/news_service.py` (caused `NameError` under Python 3.11 eager annotation evaluation; worked locally on Python 3.14 due to PEP 649 lazy annotations)
+- Fixed import sorting in `news_service.py` to satisfy `ruff check`
+
+### Test Results
+- **GitHub Actions CI:** https://github.com/danarprastika/web-trade/actions/runs/30250625895 — all 3 jobs pass green
+  - `lint-backend`: success
+  - `test-backend`: success
+  - `lint-frontend`: success

@@ -188,3 +188,22 @@
 - Technical analysis uses cached WebSocket prices; backtesting data source is future work
 - Market Intelligence module is still pending per VISION.md Fase 2
 - Frontend component tests are not yet implemented (jest configured but no tests)
+
+---
+
+## Fase 2.1 — Sprint 4 CI Repair
+
+**Status:** Complete
+
+### Items
+- [x] Added `python-multipart` to `[project.optional-dependencies]` group `test` in `backend/pyproject.toml`
+- [x] Updated CI `test-backend` job to use `python -m pytest` instead of bare `pytest`
+- [x] Added explicit `pip install python-multipart` step in CI `test-backend` job
+- [x] Fixed missing `from datetime import datetime` in `backend/app/services/news_service.py`
+- [x] Fixed import sorting in `news_service.py` to satisfy `ruff check`
+
+### Verification
+- **GitHub Actions run:** https://github.com/danarprastika/web-trade/actions/runs/30250625895
+  - `lint-backend`: success
+  - `test-backend`: success
+  - `lint-frontend`: success
