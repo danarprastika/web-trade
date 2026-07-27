@@ -37,7 +37,10 @@ def upgrade() -> None:
         "news_articles",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column(
-            "source_id", sa.Integer(), sa.ForeignKey("news_sources.id", ondelete="CASCADE"), nullable=False
+            "source_id",
+            sa.Integer(),
+            sa.ForeignKey("news_sources.id", ondelete="CASCADE"),
+            nullable=False,
         ),
         sa.Column("title", sa.String(255), nullable=False),
         sa.Column("url", sa.String(500), nullable=False),
