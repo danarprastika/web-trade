@@ -48,6 +48,7 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
       - run: pip install -e ".[test]"
+      - run: pip install python-multipart
       - run: python -m pytest --cov --cov-report=xml
         env:
           DATABASE_URL: postgresql+asyncpg://quantx:quantx_dev_pass@localhost:5432/quantx_dev
