@@ -107,3 +107,44 @@
 ### Notes
 - Reformatting touched 21 backend source files via `ruff format .`; no behavior changed
 - Frontend `npm run typecheck` also passes locally
+
+---
+
+## Fase 1 — Paper Trading & Risk Management (Sprint 3)
+
+**Status:** Complete
+
+### Items
+- [x] Backend models: `Strategy`, `Order`, `Position`, `Trade`, `RiskProfile`
+- [x] Alembic migration `003_add_paper_trading` for new tables
+- [x] Strategy service: create/list/get/update/delete with async price subscription
+- [x] Order service: create/list with paper execution flow
+- [x] Position service: open/close tracking with P&L calculation
+- [x] Risk service: risk profile CRUD + daily loss limit enforcement
+- [x] Backend routers: `/api/v1/strategies`, `/orders`, `/positions`, `/trades`, `/risk`, `/dashboard`
+- [x] 54 backend tests passing (strategies, orders, positions, risk, paper trading e2e, dashboard)
+- [x] Lint/format: ruff clean, 24 files formatted
+- [x] Frontend pages: `/dashboard` and `/strategies`
+- [x] Real-money execution path exists but defaults OFF (`enable_live_trading: bool = False`)
+
+### DoD Checklist
+- [x] `pytest` passes with 54 tests green locally
+- [x] `ruff check .` and `ruff format --check .` both pass
+- [x] GitHub Actions CI passes (lint + test backend + lint frontend)
+- [x] Alembic migration runs cleanly on existing schema
+- [x] Paper trading order lifecycle tested end-to-end
+- [x] Risk limits (daily loss) enforced in service layer
+
+### What Changed
+- Backend: added 5 new models, 5 new schemas, 5 new services, 6 new routers
+- Backend: added Alembic migration 003
+- Backend: 54 new tests, all passing
+- Frontend: added dashboard and strategies pages
+- CI: Sprint 3 commit passes all checks
+
+### Notes for Sprint 4
+- Real OAuth provider credentials still placeholder; needs real app setup for E2E social login
+- Binance WebSocket stream is hardcoded; VISION mentions "1 exchange dulu" — keep configurable
+- Exchange WebSocket credentials/env handling should be formalized
+- Next.js middleware for auth protection on protected routes is still missing
+- Fase 2 (Intelligence): News Intelligence, Market Intelligence, Technical Analysis Engine
