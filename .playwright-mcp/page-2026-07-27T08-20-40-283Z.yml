@@ -1,0 +1,208 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - link "Skip to content" [ref=e4] [cursor=pointer]:
+      - /url: "#start-of-content"
+    - banner [ref=e6]:
+      - heading "Navigation Menu" [level=2] [ref=e7]
+      - generic [ref=e8]:
+        - link "Homepage" [ref=e10] [cursor=pointer]:
+          - /url: /
+        - generic [ref=e13]:
+          - navigation "Global" [ref=e16]:
+            - list [ref=e17]:
+              - listitem [ref=e18]:
+                - button "Platform" [ref=e20] [cursor=pointer]
+              - listitem [ref=e23]:
+                - button "Solutions" [ref=e25] [cursor=pointer]
+              - listitem [ref=e28]:
+                - button "Resources" [ref=e30] [cursor=pointer]
+              - listitem [ref=e33]:
+                - button "Open Source" [ref=e35] [cursor=pointer]
+              - listitem [ref=e38]:
+                - button "Enterprise" [ref=e40] [cursor=pointer]
+              - listitem [ref=e43]:
+                - link "Pricing" [ref=e44] [cursor=pointer]:
+                  - /url: https://github.com/pricing
+          - generic [ref=e46]:
+            - button "Search or jump to…" [ref=e49] [cursor=pointer]
+            - link "Sign in" [ref=e54] [cursor=pointer]:
+              - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fdanarprastika%2Fweb-trade%2Factions%2Fruns%2F30249375582
+            - link "Sign up" [ref=e55] [cursor=pointer]:
+              - /url: /signup?ref_cta=Sign+up&ref_loc=header+logged+out&ref_page=%2F%3Cuser-name%3E%2F%3Crepo-name%3E%2Factions%2Fworkflow_runs%2Fshow&source=header-repo&source_repo=danarprastika%2Fweb-trade
+            - button "Appearance settings" [ref=e58] [cursor=pointer]
+  - main [ref=e62]:
+    - generic [ref=e63]:
+      - generic [ref=e64]:
+        - generic [ref=e65]:
+          - generic [ref=e67]:
+            - link "danarprastika" [ref=e71] [cursor=pointer]:
+              - /url: /danarprastika
+            - generic [ref=e72]: /
+            - strong [ref=e73]:
+              - link "web-trade" [ref=e74] [cursor=pointer]:
+                - /url: /danarprastika/web-trade
+            - generic [ref=e75]: Public
+          - generic [ref=e76]:
+            - list:
+              - listitem [ref=e77]:
+                - link "You must be signed in to change notification settings" [ref=e78] [cursor=pointer]:
+                  - /url: /login?return_to=%2Fdanarprastika%2Fweb-trade
+                  - text: Notifications
+              - listitem [ref=e81]:
+                - link "Fork 0" [ref=e82] [cursor=pointer]:
+                  - /url: /login?return_to=%2Fdanarprastika%2Fweb-trade
+                  - text: Fork
+                  - generic "0" [ref=e85]
+              - listitem [ref=e86]:
+                - link "You must be signed in to star a repository" [ref=e88] [cursor=pointer]:
+                  - /url: /login?return_to=%2Fdanarprastika%2Fweb-trade
+                  - text: Star
+                  - generic "0 users starred this repository" [ref=e91]: "0"
+        - navigation "Repository" [ref=e92]:
+          - list [ref=e93]:
+            - listitem [ref=e94]:
+              - link "Code" [ref=e95] [cursor=pointer]:
+                - /url: /danarprastika/web-trade
+            - listitem [ref=e99]:
+              - link "Issues" [ref=e100] [cursor=pointer]:
+                - /url: /danarprastika/web-trade/issues
+            - listitem [ref=e105]:
+              - link "Pull requests" [ref=e106] [cursor=pointer]:
+                - /url: /danarprastika/web-trade/pulls
+            - listitem [ref=e110]:
+              - link "Actions" [ref=e111] [cursor=pointer]:
+                - /url: /danarprastika/web-trade/actions
+            - listitem [ref=e115]:
+              - link "Projects" [ref=e116] [cursor=pointer]:
+                - /url: /danarprastika/web-trade/projects
+            - listitem [ref=e120]:
+              - link "Security and quality" [ref=e121] [cursor=pointer]:
+                - /url: /danarprastika/web-trade/security
+            - listitem [ref=e125]:
+              - link "Insights" [ref=e126] [cursor=pointer]:
+                - /url: /danarprastika/web-trade/pulse
+      - generic [ref=e134]:
+        - generic [ref=e137]:
+          - link "CI" [ref=e140] [cursor=pointer]:
+            - /url: /danarprastika/web-trade/actions/workflows/ci.yml
+          - generic [ref=e144]:
+            - generic [ref=e145]:
+              - img "failed:" [ref=e149]
+              - 'heading "fix(ci): add verbose pytest output for diagnosis #14" [level=1] [ref=e151]'
+            - link "Sign in to view logs" [ref=e155] [cursor=pointer]:
+              - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fdanarprastika%2Fweb-trade%2Factions%2Fruns%2F30249375582
+        - generic [ref=e159]:
+          - region "Workflow run summary" [ref=e160]:
+            - generic [ref=e161]:
+              - generic [ref=e162]:
+                - generic [ref=e163]: Triggered via push July 27, 2026 08:182 minutes ago
+                - generic [ref=e164]:
+                  - link [ref=e165] [cursor=pointer]:
+                    - /url: /danarprastika
+                    - img "@danarprastika" [ref=e166]
+                    - text: danarprastika
+                  - generic [ref=e167]:
+                    - generic [ref=e168]: pushed
+                    - link "7e6264e" [ref=e169] [cursor=pointer]:
+                      - /url: /danarprastika/web-trade/commit/7e6264e8dd5179589471f3c809f3d60e2ca7f595
+                  - link "main" [ref=e172] [cursor=pointer]:
+                    - /url: /danarprastika/web-trade/tree/refs/heads/main
+              - generic [ref=e173]:
+                - generic [ref=e174]: Status
+                - text: Failure
+              - generic [ref=e175]:
+                - generic [ref=e176]: Total duration
+                - link "1m 53s" [ref=e177] [cursor=pointer]:
+                  - /url: /danarprastika/web-trade/actions/runs/30249375582/usage
+              - generic [ref=e178]:
+                - generic [ref=e179]: Artifacts
+                - text: –
+          - region "Workflow run graph" [ref=e180]:
+            - generic [ref=e182]:
+              - generic [ref=e184]:
+                - heading [level=2] [ref=e185]:
+                  - link "ci.yml" [ref=e186] [cursor=pointer]:
+                    - /url: /danarprastika/web-trade/actions/runs/30249375582/workflow
+                - generic [ref=e187]: "on: push"
+              - generic [ref=e189]:
+                - generic [ref=e192]:
+                  - 'link "completed successfully: lint-backend 10s" [ref=e194] [cursor=pointer]':
+                    - /url: /danarprastika/web-trade/actions/runs/30249375582/job/89923650338
+                    - generic [ref=e196]:
+                      - img "completed successfully:" [ref=e198]
+                      - generic [ref=e200]: lint-backend
+                      - generic [ref=e202]: 10s
+                  - 'link "failed: test-backend 46s" [ref=e204] [cursor=pointer]':
+                    - /url: /danarprastika/web-trade/actions/runs/30249375582/job/89923650335
+                    - generic [ref=e206]:
+                      - img "failed:" [ref=e208]
+                      - generic [ref=e210]: test-backend
+                      - generic [ref=e212]: 46s
+                  - 'link "completed successfully: lint-frontend 1m 50s" [ref=e214] [cursor=pointer]':
+                    - /url: /danarprastika/web-trade/actions/runs/30249375582/job/89923650369
+                    - generic [ref=e216]:
+                      - img "completed successfully:" [ref=e218]
+                      - generic [ref=e220]: lint-frontend
+                      - generic [ref=e222]: 1m 50s
+                - generic [ref=e223]:
+                  - paragraph [ref=e224]: Oh hello! Nice to see you.
+                  - paragraph [ref=e225]:
+                    - text: Made with ❤️ by
+                    - link [ref=e226] [cursor=pointer]:
+                      - /url: https://actions.github.io/humans.txt
+                      - text: humans.txt
+              - generic [ref=e227]:
+                - button "Fit to window" [disabled] [ref=e228]
+                - generic [ref=e229]:
+                  - button "Zoom out" [disabled] [ref=e231]
+                  - button "Zoom in" [disabled] [ref=e233]
+          - region "Annotations" [ref=e234]:
+            - generic [ref=e235]:
+              - generic [ref=e237]:
+                - heading "Annotations" [level=2] [ref=e238]
+                - generic [ref=e239]: 1 error and 3 warnings
+              - table [ref=e240]:
+                - rowgroup [ref=e241]:
+                  - row [ref=e242]:
+                    - cell "test-backend Process completed with exit code 4." [ref=e243]:
+                      - generic [ref=e248]:
+                        - link [ref=e249] [cursor=pointer]:
+                          - /url: /danarprastika/web-trade/actions/runs/30249375582/job/89923650335#step:7:27
+                          - strong [ref=e250]: test-backend
+                        - generic [ref=e251]: Process completed with exit code 4.
+                  - row [ref=e254]:
+                    - cell [ref=e255]:
+                      - generic [ref=e260]:
+                        - link [ref=e261] [cursor=pointer]:
+                          - /url: /danarprastika/web-trade/actions/runs/30249375582/job/89923650338#step:13:2
+                          - strong [ref=e262]: lint-backend
+                        - generic [ref=e263]:
+                          - generic [ref=e265]:
+                            - text: "Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see:"
+                            - link "https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/" [ref=e266] [cursor=pointer]:
+                              - /url: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+                          - button "Show more" [ref=e267] [cursor=pointer]
+                  - row [ref=e268]:
+                    - cell [ref=e269]:
+                      - generic [ref=e274]:
+                        - link [ref=e275] [cursor=pointer]:
+                          - /url: /danarprastika/web-trade/actions/runs/30249375582/job/89923650335#step:17:2
+                          - strong [ref=e276]: test-backend
+                        - generic [ref=e277]:
+                          - generic [ref=e279]:
+                            - text: "Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see:"
+                            - link "https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/" [ref=e280] [cursor=pointer]:
+                              - /url: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+                          - button "Show more" [ref=e281] [cursor=pointer]
+                  - row [ref=e282]:
+                    - cell [ref=e283]:
+                      - generic [ref=e288]:
+                        - link [ref=e289] [cursor=pointer]:
+                          - /url: /danarprastika/web-trade/actions/runs/30249375582/job/89923650369#step:13:2
+                          - strong [ref=e290]: lint-frontend
+                        - generic [ref=e291]:
+                          - generic [ref=e293]:
+                            - text: "Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4. For more information see:"
+                            - link "https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/" [ref=e294] [cursor=pointer]:
+                              - /url: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+                          - button "Show more" [ref=e295] [cursor=pointer]
