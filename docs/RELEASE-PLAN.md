@@ -79,3 +79,31 @@
 - Consider adding Next.js middleware for auth protection on dashboard/watchlist routes
 - Test artifacts (SQLite files) are now auto-cleaned; monitor quantity during heavy test runs
 
+---
+
+## Fase 2.1 — CI Repair (Sprint 2.1)
+
+**Status:** Complete
+
+### Items
+- [x] Added `[project.optional-dependencies]`, group `test`, to `backend/pyproject.toml` containing `pytest`, `pytest-asyncio`, `pytest-cov`, `httpx`, `aiosqlite`
+- [x] Pinned `bcrypt<4` to resolve passlib/bcrypt compatibility (`AttributeError: module 'bcrypt' has no attribute '__about__'`)
+- [x] Added missing runtime dependency `email-validator>=2.1.0` (required by `pydantic.EmailStr`)
+- [x] Fixed 73 auto-fixable ruff issues + 14 manual fixes across backend sources, Alembic env, and tests
+- [x] Updated `.github/workflows/ci.yml` `test-backend` to install test extras: `pip install -e ".[test]"`
+- [x] Fixed `lint-frontend` cache path on `actions/setup-node@v4` (`cache-dependency-path: frontend/package-lock.json`)
+- [x] Migrated frontend lint from deprecated `next lint` (removed in Next.js 16) to `eslint .`
+- [x] All 3 CI jobs pass green on latest run
+
+### Verification
+- **Local backend tests:** 14 passed, 0 failed, 2 warnings (duration 12.84s)
+- **Local ruff:** `ruff check .` and `ruff format --check .` both pass
+- **Local frontend lint:** `npm run lint` passes
+- **GitHub Actions run:** https://github.com/danarprastika/web-trade/actions/runs/30239870657
+  - `lint-backend`: success
+  - `test-backend`: success
+  - `lint-frontend`: success
+
+### Notes
+- Reformatting touched 21 backend source files via `ruff format .`; no behavior changed
+- Frontend `npm run typecheck` also passes locally
