@@ -130,10 +130,11 @@ async def test_update_risk_profile(auth_client: AsyncClient, account_id: int):
 
 
 @pytest.mark.anyio
-async def test_daily_loss_limit_triggers_circuit_breaker(db_session: AsyncSession, account_id: int, asset_id: int):
+async def test_daily_loss_limit_triggers_circuit_breaker(
+    db_session: AsyncSession, account_id: int, asset_id: int
+):
     from sqlalchemy import select
 
-    from app.models.risk_profile import RiskProfile
     from app.models.trade import Trade
     from app.models.user import User
     from app.services.risk_service import risk_service
@@ -148,7 +149,7 @@ async def test_daily_loss_limit_triggers_circuit_breaker(db_session: AsyncSessio
     await db_session.commit()
     await db_session.refresh(profile)
 
-    for i in range(3):
+    for _ in range(3):
         trade = Trade(
             user_id=user.id,
             account_id=account_id,
@@ -175,7 +176,6 @@ async def test_daily_loss_limit_triggers_circuit_breaker(db_session: AsyncSessio
 async def test_max_drawdown_triggers_circuit_breaker(db_session: AsyncSession, account_id: int):
     from sqlalchemy import select
 
-    from app.models.risk_profile import RiskProfile
     from app.models.trading_account import TradingAccount
     from app.models.user import User
     from app.services.risk_service import risk_service
