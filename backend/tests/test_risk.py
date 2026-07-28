@@ -149,11 +149,27 @@ async def test_daily_loss_limit_triggers_circuit_breaker(
     await db_session.commit()
     await db_session.refresh(profile)
 
+    from app.models.order import Order
+
+    order = Order(
+        user_id=user.id,
+        account_id=account_id,
+        asset_id=asset_id,
+        side="buy",
+        order_type="market",
+        quantity=0.1,
+        status="filled",
+        idempotency_key="risk-test-order",
+    )
+    db_session.add(order)
+    await db_session.commit()
+    await db_session.refresh(order)
+
     for _ in range(3):
         trade = Trade(
             user_id=user.id,
             account_id=account_id,
-            order_id=0,
+            order_id=order.id,
             asset_id=asset_id,
             side="sell",
             quantity=0.1,
