@@ -127,3 +127,83 @@ async def test_update_risk_profile(auth_client: AsyncClient, account_id: int):
     data = resp.json()
     assert data["daily_loss_limit"] == 500.0
     assert data["position_limit"] == 5
+
+
+@pytest.mark.anyio
+async def test_daily_loss_limit_triggers_circuit_breaker(db_session: AsyncSession, account_id: int, asset_id: int):
+    from sqlalchemy import select
+
+    from app.models.risk_profile import RiskProfile
+    from app.models.trade import Trade
+    from app.models.user import User
+    from app.services.risk_service import risk_service
+
+    result = await db_session.execute(select(User).where(User.email == "risk@quantx.ai"))
+    user = result.scalar_one_or_none()
+    assert user is not None
+
+    profile = await risk_service.get_risk_profile(db_session, user.id, account_id)
+    assert profile is not None
+    profile.daily_loss_limit = 100.0
+    await db_session.commit()
+    await db_session.refresh(profile)
+
+    for i in range(3):
+        trade = Trade(
+            user_id=user.id,
+            account_id=account_id,
+            order_id=0,
+            asset_id=asset_id,
+            side="sell",
+            quantity=0.1,
+            price=100.0,
+            pnl=-50.0,
+        )
+        db_session.add(trade)
+    await db_session.commit()
+
+    ok, reason = await risk_service.validate_trade(db_session, user.id, account_id, 100.0)
+    assert ok is False
+    assert "daily loss limit" in reason.lower()
+
+    await db_session.refresh(profile)
+    assert profile.circuit_breaker_triggered is True
+    assert profile.circuit_breaker_reason is not None
+
+
+@pytest.mark.anyio
+async def test_max_drawdown_triggers_circuit_breaker(db_session: AsyncSession, account_id: int):
+    from sqlalchemy import select
+
+    from app.models.risk_profile import RiskProfile
+    from app.models.trading_account import TradingAccount
+    from app.models.user import User
+    from app.services.risk_service import risk_service
+
+    result = await db_session.execute(select(User).where(User.email == "risk@quantx.ai"))
+    user = result.scalar_one_or_none()
+    assert user is not None
+
+    result = await db_session.execute(
+        select(TradingAccount).where(TradingAccount.user_id == user.id)
+    )
+    account = result.scalar_one_or_none()
+    assert account is not None
+
+    account.balance = 8000.0
+    await db_session.commit()
+    await db_session.refresh(account)
+
+    profile = await risk_service.get_risk_profile(db_session, user.id, account_id)
+    assert profile is not None
+    profile.max_drawdown = 0.2
+    await db_session.commit()
+    await db_session.refresh(profile)
+
+    ok, reason = await risk_service.validate_trade(db_session, user.id, account_id, 100.0)
+    assert ok is False
+    assert "max drawdown" in reason.lower()
+
+    await db_session.refresh(profile)
+    assert profile.circuit_breaker_triggered is True
+    assert profile.circuit_breaker_reason is not None

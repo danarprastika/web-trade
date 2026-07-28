@@ -144,10 +144,35 @@
 
 ### Notes for Sprint 4
 - Real OAuth provider credentials still placeholder; needs real app setup for E2E social login
-- Binance WebSocket stream is hardcoded; VISION mentions "1 exchange dulu" — keep configurable
+- Binance WebSocket stream is hardcoded; VISION mentions "1 exchange dulu" — keep it configurable
 - Exchange WebSocket credentials/env handling should be formalized
 - Next.js middleware for auth protection on protected routes is still missing
 - Fase 2 (Intelligence): News Intelligence, Market Intelligence, Technical Analysis Engine
+
+---
+
+## Fase 1.1 — Risk-Testing Gap Close (Sprint 3.1)
+
+**Status:** Complete
+
+### Items
+- [x] Added `test_daily_loss_limit_triggers_circuit_breaker` in `test_risk.py` that creates losing trades exceeding the limit and verifies `validate_trade()` returns `False` with `circuit_breaker_triggered=True`
+- [x] Added `test_max_drawdown_triggers_circuit_breaker` in `test_risk.py` that reduces account balance to trigger drawdown and verifies `validate_trade()` returns `False` with `circuit_breaker_triggered=True`
+- [x] Added warning comment in `config.py` explaining `enable_live_trading` must be checked at every real-money execution entrypoint, referencing `docs/VISION.md`
+- [x] Verified actual pytest count from command output: **72 passed, 2 warnings in 83.74s**
+
+### DoD Checklist
+- [x] `validate_trade()` rejection + circuit breaker state verified for daily loss limit
+- [x] `validate_trade()` rejection + circuit breaker state verified for max drawdown
+- [x] `enable_live_trading` flag documented with security warning in `config.py`
+- [x] Exact pytest output captured and recorded
+
+### What Changed
+- Backend: added 4 test cases (2 scenarios × 2 asyncio modes: asyncio + trio)
+- Backend: added security warning comment for `enable_live_trading` in `config.py`
+
+### Notes
+- The previous release plan stated "68 backend tests"; actual pytest output shows 72 tests due to asyncio/trio parametrization across all test functions.
 
 ---
 

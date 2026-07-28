@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     market_subscribed_symbols: list[str] = ["btcusdt", "ethusdt", "solusdt", "xrpusdt", "dogeusdt"]
 
     # Paper trading / live trading
+    # WARNING: enable_live_trading must be checked at every real-money execution
+    # entrypoint before any order is placed, funds are debited, or a strategy is
+    # started. See docs/VISION.md for the security requirements around live
+    # trading execution paths.
     enable_live_trading: bool = False
 
 
