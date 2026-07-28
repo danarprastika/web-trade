@@ -4,6 +4,10 @@ from httpx import ASGITransport, AsyncClient
 
 from app.database import get_db
 from app.main import create_app
+from app.models.order import Order
+from app.models.trade import Trade
+from app.models.user import User
+from app.services.risk_service import risk_service
 
 
 @pytest_asyncio.fixture
@@ -135,9 +139,7 @@ async def test_daily_loss_limit_triggers_circuit_breaker(
 ):
     from sqlalchemy import select
 
-    from app.models.trade import Trade
-    from app.models.user import User
-    from app.services.risk_service import risk_service
+    from app.models.trading_account import TradingAccount
 
     result = await db_session.execute(select(User).where(User.email == "risk@quantx.ai"))
     user = result.scalar_one_or_none()
@@ -148,8 +150,6 @@ async def test_daily_loss_limit_triggers_circuit_breaker(
     profile.daily_loss_limit = 100.0
     await db_session.commit()
     await db_session.refresh(profile)
-
-    from app.models.order import Order
 
     order = Order(
         user_id=user.id,
@@ -193,8 +193,6 @@ async def test_max_drawdown_triggers_circuit_breaker(db_session: AsyncSession, a
     from sqlalchemy import select
 
     from app.models.trading_account import TradingAccount
-    from app.models.user import User
-    from app.services.risk_service import risk_service
 
     result = await db_session.execute(select(User).where(User.email == "risk@quantx.ai"))
     user = result.scalar_one_or_none()
