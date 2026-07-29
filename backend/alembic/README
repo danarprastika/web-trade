@@ -1,2 +1,0 @@
-Alembic configuration for QuantX AI.
-Run `alembic upgrade head` to apply migrations.
