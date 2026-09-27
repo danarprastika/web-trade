@@ -1,0 +1,57 @@
+{
+  "status": "ENTERPRISE DOCUMENTATION BASELINE \u2014 CONTROLLED G1 PLANNING",
+  "project_type": "long-lived AI-native proprietary trading system",
+  "mvp_only": false,
+  "frontend": {
+    "primary": [
+      "TypeScript",
+      "HTML",
+      "CSS"
+    ],
+    "optional": [
+      "Rust/WASM when justified"
+    ]
+  },
+  "backend": {
+    "primary": [
+      "Go"
+    ],
+    "safety_critical": [
+      "Rust when justified"
+    ],
+    "persistence": [
+      "SQL"
+    ]
+  },
+  "intelligence": [
+    "Python"
+  ],
+  "infrastructure": [
+    "IaC"
+  ],
+  "new_documents": [
+    95,
+    96,
+    97,
+    98,
+    99,
+    100,
+    101,
+    102,
+    103,
+    104
+  ],
+  "live_authorization": false,
+  "finality": "No generic specification expansion; implementation-derived gaps require Change Request.",
+  "version": "v1.3.0",
+  "implementation_authorization": false,
+  "g1_status": "PLANNING_ONLY_BLOCKED_PENDING_PHASE0_CLOSURE",
+  "source_baseline": "AI_Trading_Company_FINAL_v1.0_TRUE_PRODUCTION_BASELINE_FOR_KILOCODE(8).zip",
+  "finalization_record": "FINALIZATION_CHANGELOG.md",
+  "readiness_record": "G1_READINESS_AND_BLOCKERS.md",
+  "documentation_baseline_version": "1.3.0",
+  "enterprise_completion_audit": "ENTERPRISE_DOCUMENTATION_COMPLETION_AUDIT_v1.2.0.md",
+  "enterprise_full_audit": "ENTERPRISE_FULL_AUDIT_v1.3.0.md",
+  "enterprise_document_register": "ENTERPRISE_DOCUMENT_REGISTER_v1.3.0.md",
+  "enterprise_control_plane": "ENTERPRISE_CONTROL_PLANE"
+}
