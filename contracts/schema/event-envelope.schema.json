@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.web-trade.dev/schema/event-envelope.schema.json",
+  "title": "EventEnvelope",
+  "description": "An immutable fact that has already occurred. Events are written in the same transaction as the state change that produced them (transactional outbox, docs/05, ADR-006).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "event_type",
+    "schema_version",
+    "aggregate_type",
+    "aggregate_id",
+    "correlation_id",
+    "causation_id",
+    "producer_id",
+    "occurred_at",
+    "recorded_at",
+    "sequence",
+    "payload"
+  ],
+  "properties": {
+    "event_id": {
+      "description": "Unique identity of this event. Prefix evt_.",
+      "$ref": "identifier.schema.json",
+      "pattern": "^evt_[0-9a-hjkmnp-tv-z]{26}$"
+    },
+    "event_type": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$",
+      "maxLength": 128,
+      "examples": ["order.accepted", "order.rejected", "fill.recorded", "halt.raised", "reconciliation.case.opened"]
+    },
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "aggregate_type": {
+      "description": "Type of the aggregate whose state changed.",
+      "type": "string",
+      "enum": [
+        "order",
+        "position",
+        "portfolio",
+        "ledger_account",
+        "strategy",
+        "risk_policy",
+        "config_snapshot",
+        "reconciliation_case",
+        "feed",
+        "model",
+        "dataset",
+        "experiment"
+      ]
+    },
+    "aggregate_id": {
+      "description": "Identity of the aggregate. Type-appropriate prefixed identifier.",
+      "type": "string",
+      "pattern": "^(ord|pos|str|mdl|run|led|evt|cmd)_[0-9a-hjkmnp-tv-z]{26}$"
+    },
+    "correlation_id": {
+      "$ref": "identifier.schema.json",
+      "pattern": "^(cmd|evt)_[0-9a-hjkmnp-tv-z]{26}$"
+    },
+    "causation_id": {
+      "description": "The command or event that directly caused this event. Null only for a root event.",
+      "oneOf": [
+        { "$ref": "identifier.schema.json" },
+        { "type": "null" }
+      ]
+    },
+    "producer_id": {
+      "description": "The single owning component that produced this event. Exactly one owner per authoritative fact (docs/01, docs/25 §2).",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "occurred_at": {
+      "description": "When the fact occurred in the owning domain.",
+      "$ref": "timestamp.schema.json"
+    },
+    "recorded_at": {
+      "description": "When the platform durably recorded the fact. recorded_at >= occurred_at is not assumed; clock skew is measured, not hidden.",
+      "$ref": "timestamp.schema.json"
+    },
+    "source_timestamp": {
+      "description": "Vendor or venue supplied timestamp where one exists. Never trusted without a freshness and clock-skew check (docs/16).",
+      "$ref": "timestamp.schema.json"
+    },
+    "sequence": {
+      "description": "Monotonic per-aggregate sequence. A gap or duplicate is a detectable anomaly, never silently tolerated (docs/01 §8).",
+      "type": "integer",
+      "minimum": 1
+    },
+    "environment": {
+      "type": "string",
+      "enum": ["dev", "test", "staging", "paper", "shadow", "live"]
+    },
+    "trace_context": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "$comment": "aggregate_type must agree with the aggregate_id prefix. This is enforced by the schema, not left to a binding convention.",
+      "if": { "properties": { "aggregate_type": { "const": "order" } }, "required": ["aggregate_type"] },
+      "then": { "properties": { "aggregate_id": { "pattern": "^ord_[0-9a-hjkmnp-tv-z]{26}$" } } }
+    },
+    {
+      "if": { "properties": { "aggregate_type": { "const": "position" } }, "required": ["aggregate_type"] },
+      "then": { "properties": { "aggregate_id": { "pattern": "^pos_[0-9a-hjkmnp-tv-z]{26}$" } } }
+    },
+    {
+      "if": { "properties": { "aggregate_type": { "const": "strategy" } }, "required": ["aggregate_type"] },
+      "then": { "properties": { "aggregate_id": { "pattern": "^str_[0-9a-hjkmnp-tv-z]{26}$" } } }
+    },
+    {
+      "if": { "properties": { "aggregate_type": { "const": "model" } }, "required": ["aggregate_type"] },
+      "then": { "properties": { "aggregate_id": { "pattern": "^mdl_[0-9a-hjkmnp-tv-z]{26}$" } } }
+    },
+    {
+      "if": { "properties": { "aggregate_type": { "const": "ledger_account" } }, "required": ["aggregate_type"] },
+      "then": { "properties": { "aggregate_id": { "pattern": "^led_[0-9a-hjkmnp-tv-z]{26}$" } } }
+    },
+    {
+      "$comment": "config_snapshot, reconciliation_case, feed, dataset, and experiment share the run_/evt_ identifier space; their bindings add the narrower check.",
+      "if": { "properties": { "aggregate_type": { "enum": ["config_snapshot", "reconciliation_case", "feed", "dataset", "experiment"] } }, "required": ["aggregate_type"] },
+      "then": { "properties": { "aggregate_id": { "pattern": "^(run|evt)_[0-9a-hjkmnp-tv-z]{26}$" } } }
+    }
+  ],
+  "x-invariants": [
+    "Events are immutable. A correction is a new compensating event; an event is never edited or deleted (docs/04, docs/05).",
+    "Delivery is at-least-once. Consumers MUST be idempotent. No exactly-once assumption is made anywhere (ADR-020, docs/25 §6).",
+    "A duplicate delivery must never cause a duplicate domain transition (docs/09 invariant 3).",
+    "An event is written in the same transaction as the state change. A committed state change with no event, or an event with no state change, is a defect.",
+    "Events carry no authority by themselves. Authority lives in the owning module's state, not in the event log."
+  ],
+  "examples": [
+    {
+      "event_id": "evt_01hq3k7m9x2f5rb8n0v6c4tqyx",
+      "event_type": "order.accepted",
+      "schema_version": "1.0.0",
+      "aggregate_type": "order",
+      "aggregate_id": "ord_01hq3k7m9x2f5rb8n0v6c4tqwx",
+      "correlation_id": "cmd_01hq3k7m9x2f5rb8n0v6c4tqwx",
+      "causation_id": "cmd_01hq3k7m9x2f5rb8n0v6c4tqwx",
+      "producer_id": "oms",
+      "occurred_at": "2026-09-28T10:17:46.123456789Z",
+      "recorded_at": "2026-09-28T10:17:46.140000000Z",
+      "sequence": 3,
+      "environment": "paper"
+    }
+  ]
+}

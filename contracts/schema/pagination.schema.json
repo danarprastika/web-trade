@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.web-trade.dev/schema/pagination.schema.json",
+  "title": "Pagination",
+  "description": "Cursor pagination for collection endpoints. Keyset/cursor based, never offset based: an offset over a mutating authoritative collection silently skips or repeats rows, which is unacceptable for order and ledger reads (docs/15, docs/02 section 9).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["limit"],
+  "properties": {
+    "limit": {
+      "description": "Maximum number of items to return. A server-defined maximum applies; an over-limit request is clamped or rejected, never silently truncated without a signal.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500,
+      "default": 100
+    },
+    "cursor": {
+      "description": "Opaque keyset cursor from a previous response. Opaque to the client: its internal structure is not a contract and must not be parsed by callers.",
+      "type": "string",
+      "maxLength": 512
+    },
+    "order": {
+      "type": "string",
+      "enum": ["asc", "desc"],
+      "default": "desc"
+    }
+  },
+  "x-invariants": [
+    "Cursors are opaque. A client that parses one is depending on an unspecified implementation detail.",
+    "A cursor is bound to the query it was issued for. Reusing a cursor across a different filter set is rejected rather than reinterpreted.",
+    "For an authoritative collection, ordering defaults to descending by the authoritative sequence so that the newest state is never skipped.",
+    "A cursor encodes position, never authorization. It is not a capability and grants no access."
+  ],
+  "examples": [
+    { "limit": 100, "order": "desc" },
+    { "limit": 50, "cursor": "eyJzZXEiOjN9", "order": "asc" }
+  ]
+}

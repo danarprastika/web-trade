@@ -1,0 +1,21 @@
+// A Go workspace binds the canonical component modules together during development and in
+// CI. Each directory below is a separate module so that it has exactly one build
+// definition, one artifact identity, and one rollback procedure, as required by
+// docs/02_POLYGLOT_ENGINEERING_STANDARD.md section 8.
+//
+// The workspace is a development convenience, not a release mechanism. Release builds are
+// produced from pinned commits and immutable artifact digests (docs/02 section 10).
+//
+// Toolchain versions are pinned exactly. CI must fail on toolchain drift or an unpinned
+// dependency (docs/00_README.md, toolchain lifecycle).
+
+go 1.26.2
+
+use (
+	./adapters/venues
+	./components/oms
+	./components/reconciliation
+	./components/risk-engine
+	./contracts/go
+	./services/control-plane
+)

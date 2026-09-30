@@ -1,0 +1,104 @@
+{
+  "schema": "ecc.project-brain/project/v7",
+  "version": "1.0.0",
+  "project_id": "web-trade",
+  "name": "AI Trading Company — Full-Scale Enterprise Trading Platform",
+  "repo_root": "C:\\web-trade",
+  "created_at": "2026-09-28T10:17:46Z",
+  "created_by": "team-lead (/ecc-project-init)",
+  "branch": "main",
+  "baseline_commit": "15d978f",
+  "mode": "COMPLEX",
+  "scale": {
+    "rating": "XXL",
+    "rationale": [
+      "Blueprint self-classifies as 'Full-Scale Enterprise Release', explicitly NOT MVP/prototype/pilot (docs/25 §1).",
+      "26 authoritative specifications (docs/MANIFEST.json), 8 implementation phases (docs/13), 12 binary gates G0-G11 (docs/11).",
+      "4-language polyglot build: Go authoritative control plane, TypeScript/Next.js operator UI, Python research, Rust by ADR only (docs/02, docs/25 §4).",
+      "13 bounded contexts and 9 control-plane modules with one-way authority flow (docs/01 §2, §7).",
+      "Regulated financial domain: live trading with money movement, immutable ledger, dual-control approvals, legal/jurisdiction eligibility gates (docs/18, docs/23, docs/25 §3.7).",
+      "Repo currently contains ZERO executable code; all 8 phases are unstarted."
+    ]
+  },
+  "source_of_truth": {
+    "authority": "docs/ (26 Markdown specs + MANIFEST.json)",
+    "precedence": [
+      "docs/25_DEEP_ARCHITECTURAL_AUDIT_AND_FULL_SCALE_RELEASE_PROFILE.md",
+      "docs/23_ARCHITECTURE_AND_COMPLIANCE_DECISIONS.md",
+      "domain-specific contracts",
+      "docs/24_ENTERPRISE_RELEASE_STANDARD.md",
+      "docs/00_README.md"
+    ],
+    "precedence_source": "docs/25 §9",
+    "g0_verified": true,
+    "g0_method": "SHA-256 + byte-length recompute of all 26 manifest documents"
+  },
+  "product_boundary": {
+    "description": "AI-native proprietary trading platform across crypto, FX, equities, commodities.",
+    "modes": ["research", "backtest", "simulation", "paper", "shadow", "live"],
+    "environments": ["dev", "test", "staging", "paper", "shadow", "live"],
+    "authority_rule": "AI may propose. Deterministic controls decide. The OMS records the authoritative order state. Reconciliation resolves external truth. The ledger records financial facts.",
+    "authority_rule_source": "docs/00_README.md",
+    "live_default": "DISABLED — deny-by-default until G0-G11 pass with evidence (docs/25 §3.7, docs/11 G11)"
+  },
+  "technology_baseline": {
+    "operator_ui": "TypeScript / React / Next.js App Router — presentation only",
+    "control_plane": "Go (authoritative application layer)",
+    "research": "Python (offline, non-authoritative)",
+    "safety_extensions": "Rust (only by approved ADR)",
+    "database": "PostgreSQL 17 — system of record",
+    "event_delivery": "PostgreSQL transactional outbox; NATS JetStream at defined threshold",
+    "cache": "Redis 8 — ephemeral only, never financial truth",
+    "observability": "OpenTelemetry, Prometheus-compatible, Grafana-compatible",
+    "ci_cd": "GitHub Actions",
+    "containers": "OCI images via Docker/BuildKit",
+    "infrastructure": "Terraform",
+    "source": "docs/00_README.md technology baseline table"
+  },
+  "detected_toolchain": {
+    "observed_at": "2026-09-28T10:20:00Z",
+    "go": "go1.26.2 windows/amd64",
+    "node": "v24.18.0",
+    "python": "3.14.6",
+    "docker_cli": "29.8.0",
+    "docker_daemon": "NOT RUNNING (docker info failed: dockerDesktopLinuxEngine pipe not found)",
+    "terraform": "NOT INSTALLED",
+    "psql": "NOT INSTALLED",
+    "note": "PostgreSQL 17 is required and is expected to be provided via Docker. Docker daemon must be started before any persistence work."
+  },
+  "current_state": {
+    "tracked_files_at_head": 27,
+    "executable_code_at_head": 0,
+    "gates_passed": [],
+    "gates_in_progress": ["G0"],
+    "working_tree": "clean",
+    "deleted_code_history": {
+      "deleted_in_commit": "be3ef5d (\"clear\")",
+      "prior_stack": "Python FastAPI backend + Next.js frontend (sprints 1-4)",
+      "recoverable_from": ["7327bfd", "6f6bde0", "49e98c2"],
+      "conformity": "NON-CONFORMANT with the authoritative blueprint: a Python authoritative backend violates ADR-001 (Go is the authoritative control plane) and ADR-003 (Python restricted to research/backtest). Not a restore target; may be mined for domain/naming reference only."
+    }
+  },
+  "plan": {
+    "current_version": "1.0.0",
+    "status": "APPROVED",
+    "approved_at": "2026-09-28T10:30:00Z",
+    "approved_scope": "Greenfield Go implementation of the canonical repository shape; Phases 1-7 to G0-G10; G11 out of scope; G0+G1 as the first delivery boundary.",
+    "path": ".kilo/ecc/project-brain/requirements.md",
+    "summary": "Execute docs/13 Phases 1-7 to reach G0-G10. Phase 8 (G11 live activation) is out of engineering scope and remains deny-by-default.",
+    "first_delivery_boundary": "G0 + G1 (Phases 1-2: foundation and domain core)",
+    "current_work_item": "WI-101"
+  },
+  "team": {
+    "model": "single-owner serial execution with bounded delegation",
+    "rationale": "Zero code exists and authority boundaries are strict. The critical path is a single Go control plane. Parallelism would create overlapping write scopes in /services/control-plane. Delegation is reserved for read-only review passes.",
+    "max_concurrency": 2
+  },
+  "out_of_scope": [
+    "Live trading activation (G11) — requires two distinct authorized approvers, verified legal eligibility, and provisioned isolated live credentials",
+    "Real venue/broker connectivity with production credentials",
+    "Terraform-managed production cloud infrastructure (tool not installed)",
+    "Certified regulatory/legal approval for any jurisdiction"
+  ],
+  "secrets_policy": "No secret may be written into any Project Brain artifact or into the repository. Credentials live in external secret storage only."
+}

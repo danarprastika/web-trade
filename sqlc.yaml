@@ -1,0 +1,35 @@
+# sqlc configuration for the control plane.
+#
+# The generated accessors are the only sanctioned way for Go to reach PostgreSQL. Hand-written
+# SQL in Go strings is how a constraint that the database enforces quietly stops being
+# enforced, because the string does not have to agree with the schema.
+#
+# Two settings carry more weight than they look:
+#
+#   remove_schemas_suffix / emit_exact_table_names
+#     0001 creates a real `ledger` schema and qualifies its tables, so the generated names
+#     come out as LedgerEntry. 0002 and 0003 create unqualified tables that live in `public`
+#     and use a name prefix instead of a namespace, so their generated names keep the prefix:
+#     AuditRecords, AuthzDecisions. The inconsistency is in the schema, not the config, and it
+#     is visible here rather than hidden by a rename rule. It is recorded as a finding against
+#     docs/05 schema ownership; moving the nine tables is a breaking change that needs its own
+#     expand/contract migration.
+#
+#   rules
+#     "the Go layer must not contain string literals holding SQL" is asserted by
+#     tests/ci, not by sqlc. sqlc proves the generated code matches the schema; it cannot see
+#     a query that bypasses it.
+version: "2"
+sql:
+  - engine: postgresql
+    schema: db/migrations
+    queries: services/control-plane/db/queries
+    gen:
+      go:
+        package: dbgen
+        out: services/control-plane/db/dbgen
+        sql_package: database/sql
+        emit_json_tags: true
+        emit_prepared_queries: false
+        emit_interface: true
+        emit_empty_slices: true

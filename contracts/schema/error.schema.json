@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.web-trade.dev/schema/error.schema.json",
+  "title": "Error",
+  "description": "Canonical error taxonomy (docs/03). The error code is the stable contract; the message is human-facing and is never parsed by machines.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["code", "message"],
+  "properties": {
+    "code": {
+      "type": "string",
+      "enum": [
+        "VALIDATION_ERROR",
+        "AUTHENTICATION_ERROR",
+        "AUTHORIZATION_ERROR",
+        "CONFLICT",
+        "RISK_REJECTED",
+        "RATE_LIMITED",
+        "DEPENDENCY_UNAVAILABLE",
+        "TIMEOUT_UNKNOWN",
+        "DATA_STALE",
+        "RECONCILIATION_REQUIRED",
+        "INTERNAL_ERROR"
+      ]
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "description": "Human-facing. Never contains secrets, credentials, tokens, or raw venue payloads."
+    },
+    "correlation_id": {
+      "description": "Trace correlation for cross-component investigation.",
+      "$ref": "identifier.schema.json",
+      "pattern": "^(cmd|evt)_[0-9a-hjkmnp-tv-z]{26}$"
+    },
+    "details": {
+      "type": "object",
+      "description": "Structured, machine-readable context. Must be safe to log and safe to return to an authorized operator.",
+      "additionalProperties": true
+    },
+    "retryable": {
+      "type": "boolean",
+      "description": "Whether an identical retry could succeed without operator action. FALSE for every risk-increasing command where the prior outcome is unknown: a retry that could increase exposure is never marked retryable (docs/01 §10.3)."
+    }
+  },
+  "x-code-semantics": {
+    "VALIDATION_ERROR": "Request violated a contract. No state change.",
+    "AUTHENTICATION_ERROR": "Caller identity could not be established. Deny.",
+    "AUTHORIZATION_ERROR": "Caller identity established but not permitted. Deny. Policy cannot approve or override financial risk (ADR-018).",
+    "CONFLICT": "Optimistic concurrency or uniqueness violation. Last-write-wins is prohibited for authoritative state (docs/01 §8).",
+    "RISK_REJECTED": "The deterministic Risk Engine vetoed the command. Authoritative and final: AI, UI, and venue response cannot override it (docs/25 §3.1).",
+    "RATE_LIMITED": "Caller exceeded a configured limit.",
+    "DEPENDENCY_UNAVAILABLE": "A required dependency failed. Fails closed for risk-increasing work.",
+    "TIMEOUT_UNKNOWN": "An external outcome could not be established. The outcome is UNKNOWN, never assumed to be a rejection or a fill. Triggers reconciliation (docs/01 §6, docs/25 §3.3).",
+    "DATA_STALE": "Required market data is stale or contradictory. The feed is marked unhealthy and dependent commands are denied.",
+    "RECONCILIATION_REQUIRED": "Authoritative state cannot be established. Reconciliation or recovery workflow has started.",
+    "INTERNAL_ERROR": "Unexpected failure. Detail is logged with correlation_id; the message never carries sensitive data."
+  },
+  "examples": [
+    { "code": "RISK_REJECTED", "message": "Order rejected by pre-trade risk policy.", "correlation_id": "cmd_01hq3k7m9x2f5rb8n0v6c4tqwx", "retryable": false },
+    { "code": "TIMEOUT_UNKNOWN", "message": "Venue submission outcome unknown; reconciliation required.", "retryable": false }
+  ]
+}

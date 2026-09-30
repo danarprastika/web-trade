@@ -1,0 +1,60 @@
+# Local development PostgreSQL 17. docs/05 makes PostgreSQL the system of record, so the
+# first thing a developer needs is a real one rather than a mock.
+#
+# Two properties are load-bearing and are the reason this file is not a three-line service:
+#
+#   No credential is committed. Every secret below uses ${VAR:?message}, which makes compose
+#   fail with that message when the variable is unset. A default value would let the stack
+#   start with a password that is in git history, and a well-known local password stops being
+#   local the moment a developer binds the port more widely. Failing to start is the correct
+#   behaviour for a missing secret; silently using a default is not.
+#
+#   The published port is bound to loopback. The container holds a database with real
+#   migrations in it, and binding 0.0.0.0 would put it on the developer's network. Nothing
+#   outside this machine has any business reaching a development database.
+name: webtrade
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      # The bootstrap superuser. Local only; it exists to create the per-environment roles and
+      # is not the role the application connects as. Using the application role as superuser
+      # locally would hide privilege bugs that the real deployment enforces.
+      POSTGRES_USER: ${WEBTRADE_PG_SUPERUSER:?set WEBTRADE_PG_SUPERUSER in .env (see .env.example)}
+      POSTGRES_PASSWORD: ${WEBTRADE_PG_SUPERUSER_PASSWORD:?set WEBTRADE_PG_SUPERUSER_PASSWORD in .env}
+      POSTGRES_DB: ${WEBTRADE_PG_SUPERUSER_DB:?set WEBTRADE_PG_SUPERUSER_DB in .env}
+      # Passed to the init script, never to a role the application uses.
+      WEBTRADE_DEV_PASSWORD: ${WEBTRADE_DEV_PASSWORD:?set WEBTRADE_DEV_PASSWORD in .env}
+      WEBTRADE_TEST_PASSWORD: ${WEBTRADE_TEST_PASSWORD:?set WEBTRADE_TEST_PASSWORD in .env}
+    ports:
+      # Loopback only, and the host port is configurable so a developer can run two stacks.
+      - "127.0.0.1:${WEBTRADE_PG_PORT:-5432}:5432"
+    volumes:
+      # Read-only: the init scripts create the environment roles and databases once, on an
+      # empty data directory. Mounting them read-only means a compromised process in the
+      # container cannot rewrite the isolation that this stack depends on.
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # pg_isready alone is not readiness. During startup recovery the postmaster accepts a
+      # connection and pg_isready reports success, then refuses real statements. The second
+      # test is what makes `docker compose up --wait` mean the database answers.
+      test:
+        - CMD-SHELL
+        - >-
+          pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" -q
+          && psql -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" -tAc 'select 1' >/dev/null
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+    # No privileged mode, no host mounts, no added capabilities, no network beyond the default
+    # bridge. A development database is still a database that will hold financial-schema
+    # tables, and a container escape is cheaper to prevent than to detect.
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  pgdata:

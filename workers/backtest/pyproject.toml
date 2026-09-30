@@ -1,0 +1,72 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "webtrade-backtest"
+version = "0.1.0"
+description = "Deterministic backtest and simulation engine. Non-authoritative; produces versioned artifacts only."
+requires-python = "==3.14.*"
+readme = "README.md"
+
+# Pinned exactly per docs/00_README.md toolchain lifecycle. CI fails on unpinned
+# dependencies or lockfile drift (docs/02 section 10).
+#
+# This worker shares the research dependency set deliberately. A backtest and the research
+# that produced it must agree numerically; a version skew between them would make a result
+# irreproducible, and an irreproducible result cannot be promoted (docs/11, G4).
+dependencies = [
+    "numpy==2.5.1",
+    "pydantic==2.12.4",
+    # The dataset is produced by the research worker and consumed here, so this is a real
+    # dependency rather than a convenience import. It is a local workspace package, not a PyPI
+    # release, and is installed from this repository. The version is pinned for the same
+    # reason as every other dependency: a backtest and the research that produced its dataset
+    # must agree on what a Bar is, and a version skew between them would make a result
+    # irreproducible (docs/02 section 10, docs/11 G4).
+    #
+    # Duplicating Bar and Dataset here instead would be the alternative, and it would be
+    # worse: two definitions of the same type drift, and the drift shows up as a backtest that
+    # disagrees with the research that fed it.
+    "webtrade-research==0.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.0.1",
+    "ruff==0.15.1",
+    "mypy==1.19.1",
+    "hypothesis==6.151.1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/webtrade_backtest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# The research source tree is on the path because webtrade-research is a local workspace
+# package that is not installed into site-packages. Both entries are explicit so a test run
+# cannot silently fall back to a different copy of either package.
+pythonpath = ["src", "../research/src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "S", "A", "C4", "DTZ", "T20"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+warn_return_any = true
+disallow_untyped_defs = true
+# webtrade-research is a local workspace package, not a PyPI install, so mypy cannot find it
+# by name alone. Without this it reports the import as missing and then types every value that
+# crosses it as Any — which under `strict` silently downgrades a function's real return type
+# instead of reporting the missing path. The entry mirrors the pytest `pythonpath` above so the
+# two tools resolve the package from the same place.
+mypy_path = ["src", "../research/src"]

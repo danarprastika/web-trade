@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.web-trade.dev/schema/timestamp.schema.json",
+  "title": "Timestamp",
+  "description": "UTC RFC 3339 timestamp with nanosecond precision. All persisted timestamps are UTC; offsets are normalized at the transport edge and never stored (docs/03).",
+  "type": "string",
+  "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]{1,9})?Z$",
+  "examples": ["2026-09-28T10:17:46.123456789Z", "2026-09-28T10:17:46Z"],
+  "x-invariants": [
+    "The trailing 'Z' is mandatory. A stored timestamp with a non-zero offset is invalid, not merely non-canonical.",
+    "Nanosecond precision is the storage contract; consumers MUST tolerate a shorter fraction, producers SHOULD emit nine digits.",
+    "Clock drift is a first-class signal (docs/08, WI-163). A source whose clock is outside the accepted skew window marks the feed unhealthy rather than being silently trusted."
+  ]
+}

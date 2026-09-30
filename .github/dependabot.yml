@@ -1,0 +1,135 @@
+# Automated dependency maintenance.
+#
+# Authority: docs/00_README.md (Toolchain lifecycle) requires a monthly security review,
+# critical/high fixes within 14 days, and routine supported patch updates quarterly.
+# docs/06 section 7 makes secret scanning, dependency pinning and SAST mandatory controls.
+#
+# Dependabot is how that cadence is actually enforced rather than merely intended. It
+# opens reviewable pull requests; it never merges, because a security patch that skips
+# review is itself a supply-chain risk. Every PR it raises must pass the full CI gate
+# (including the toolchain drift gate) before it can reach main.
+#
+# Known limitation, recorded rather than hidden: Dependabot's `pip` ecosystem reads
+# pyproject.toml most reliably when the project uses the poetry backend. These workers
+# use hatchling. Version bumps for Python are therefore reviewed manually against the
+# monthly cadence until either the backend changes or a lockfile is introduced
+# (tracked as RISK-12). `gomod`, `npm`, `github-actions` and `docker` are fully automated.
+
+version: 2
+
+updates:
+  # --- Actions -------------------------------------------------------------
+  # Every action in .github/workflows is pinned to a commit SHA. Dependabot is the only
+  # practical mechanism for keeping those pins current, because a pinned SHA never
+  # receives an automatic security fix. This is the price of pinning and the reason this
+  # entry must not be removed.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - supply-chain
+    commit-message:
+      prefix: "ci"
+    groups:
+      # Group all action bumps into one reviewable PR. Individually they are noisy and
+      # individually trivial; the aggregate is what a reviewer actually wants to see.
+      actions:
+        patterns:
+          - "*"
+
+  # --- Go ------------------------------------------------------------------
+  # One entry per module. Each has its own go.mod, so Dependabot cannot cover them with
+  # a single directory specifier.
+  - package-ecosystem: gomod
+    directory: /contracts/go
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    groups:
+      go-contracts: { patterns: ["*"] }
+
+  - package-ecosystem: gomod
+    directory: /services/control-plane
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    groups:
+      go-control-plane: { patterns: ["*"] }
+
+  - package-ecosystem: gomod
+    directory: /components/risk-engine
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    groups:
+      go-risk-engine: { patterns: ["*"] }
+
+  - package-ecosystem: gomod
+    directory: /components/oms
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    groups:
+      go-oms: { patterns: ["*"] }
+
+  - package-ecosystem: gomod
+    directory: /components/reconciliation
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    groups:
+      go-reconciliation: { patterns: ["*"] }
+
+  - package-ecosystem: gomod
+    directory: /adapters/venues
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    groups:
+      go-venues: { patterns: ["*"] }
+
+  # --- Node ----------------------------------------------------------------
+  - package-ecosystem: npm
+    directory: /apps/web
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    commit-message:
+      prefix: "build(web)"
+    groups:
+      # Group devDependencies separately from runtime dependencies so an ESLint bump
+      # can be reviewed without obscuring a Next.js runtime bump.
+      web-runtime: { dependency-type: "production" }
+      web-dev: { dependency-type: "development" }
+
+  # --- Python --------------------------------------------------------------
+  - package-ecosystem: pip
+    directory: /workers/research
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    groups:
+      python-research: { patterns: ["*"] }
+
+  - package-ecosystem: pip
+    directory: /workers/backtest
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    groups:
+      python-backtest: { patterns: ["*"] }
+
+  # --- Container images ----------------------------------------------------
+  - package-ecosystem: docker
+    directory: /apps/web
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Etc/UTC }
+    open-pull-requests-limit: 5
+    labels: [dependencies, supply-chain]
+    groups:
+      docker-console: { patterns: ["*"] }

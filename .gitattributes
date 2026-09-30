@@ -1,0 +1,34 @@
+# Line endings are not a matter of taste here. A shell script that is checked out with CRLF
+# fails under /bin/sh — the interpreter reads the carriage return as part of the command, and
+# the script aborts before it creates anything. That failure appears in a container as an
+# unhealthy database, which is a long way from the cause, so the rule below is a real control
+# rather than cosmetic normalisation.
+#
+# This was not hypothetical: a test harness that rewrote the init script through a text-mode
+# write on Windows converted it to CRLF, and the local stack stopped working while both the
+# harness and the static test suite continued to report success.
+* text=auto eol=lf
+
+# Anything executed must keep LF regardless of the checkout configuration.
+*.sh text eol=lf
+*.py text eol=lf
+*.sql text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.env text eol=lf
+.env.example text eol=lf
+
+# Windows tooling that genuinely requires CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary. Never translated, never line-ending diffs on an image.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.gz binary

@@ -1,0 +1,515 @@
+{
+  "$comment": "Cross-language conformance corpus. Every language binding (Go, TypeScript, Python) MUST reproduce the ACCEPT cases and reject the REJECT cases. A binding that disagrees cannot be promoted (docs/02 §9). Regenerated only by an approved contract change.",
+  "contract_package_version": "1.0.0",
+  "generated_for": "docs/03_CANONICAL_CONTRACTS.md",
+  "cases": [
+    {
+      "name": "identifier/accept-valid-order",
+      "schema": "identifier.schema.json",
+      "expect": "accept",
+      "value": "ord_01hq3k7m9x2f5rb8n0v6c4tqwx",
+      "note": "Lowercase Crockford Base32 payload, 26 chars."
+    },
+    {
+      "name": "identifier/reject-uppercase",
+      "schema": "identifier.schema.json",
+      "expect": "reject",
+      "value": "ORD_01HQ3K7M9X2F5RB8N0V6C4TQWX",
+      "note": "Producers MUST NOT emit uppercase. The canonical form is lowercase (docs/03)."
+    },
+    {
+      "name": "identifier/reject-ambiguous-char-i",
+      "schema": "identifier.schema.json",
+      "expect": "reject",
+      "value": "ord_01hq3k7m9x2f5rb8n0v6c4tiqw",
+      "note": "Crockford Base32 omits I, L, O, U. The character 'i' must not appear in the payload."
+    },
+    {
+      "name": "identifier/reject-ambiguous-char-l",
+      "schema": "identifier.schema.json",
+      "expect": "reject",
+      "value": "ord_01hq3k7m9x2f5rb8n0v6c4tlqxw"
+    },
+    {
+      "name": "identifier/reject-ambiguous-char-o",
+      "schema": "identifier.schema.json",
+      "expect": "reject",
+      "value": "ord_01hq3k7m9x2f5rb8n0v6c4toqxw"
+    },
+    {
+      "name": "identifier/reject-ambiguous-char-u",
+      "schema": "identifier.schema.json",
+      "expect": "reject",
+      "value": "ord_01hq3k7m9x2f5rb8n0v6c4tuqxw"
+    },
+    {
+      "name": "identifier/reject-unknown-prefix",
+      "schema": "identifier.schema.json",
+      "expect": "reject",
+      "value": "xyz_01hq3k7m9x2f5rb8n0v6c4tqwx",
+      "note": "Only the eight registered prefixes exist (docs/03)."
+    },
+    {
+      "name": "identifier/reject-short-payload",
+      "schema": "identifier.schema.json",
+      "expect": "reject",
+      "value": "ord_01hq3k7m9x2f5rb8n0v6c4tq",
+      "note": "Payload length is fixed at 26 characters."
+    },
+    {
+      "name": "decimal/accept-integer",
+      "schema": "decimal.schema.json",
+      "expect": "accept",
+      "value": "1234"
+    },
+    {
+      "name": "decimal/accept-negative-fraction",
+      "schema": "decimal.schema.json",
+      "expect": "accept",
+      "value": "-0.0001"
+    },
+    {
+      "name": "decimal/accept-zero",
+      "schema": "decimal.schema.json",
+      "expect": "accept",
+      "value": "0"
+    },
+    {
+      "name": "decimal/reject-json-number",
+      "schema": "decimal.schema.json",
+      "expect": "reject",
+      "value": 1234.5678,
+      "note": "CRITICAL. A JSON number is never an acceptable decimal representation. IEEE-754 must not cross a financial contract (docs/03). Every binding must reject this."
+    },
+    {
+      "name": "decimal/reject-exponent",
+      "schema": "decimal.schema.json",
+      "expect": "reject",
+      "value": "1.234e3",
+      "note": "Exponent notation is not a base-10 decimal string."
+    },
+    {
+      "name": "decimal/reject-leading-zero",
+      "schema": "decimal.schema.json",
+      "expect": "reject",
+      "value": "0123.45"
+    },
+    {
+      "name": "decimal/reject-trailing-dot",
+      "schema": "decimal.schema.json",
+      "expect": "reject",
+      "value": "123."
+    },
+    {
+      "name": "decimal/reject-bare-plus",
+      "schema": "decimal.schema.json",
+      "expect": "reject",
+      "value": "+123"
+    },
+    {
+      "name": "money/accept-fiat",
+      "schema": "money.schema.json",
+      "expect": "accept",
+      "value": {
+        "currency": "USD",
+        "amount": "1234.5678"
+      }
+    },
+    {
+      "name": "money/accept-digital-asset-with-scale",
+      "schema": "money.schema.json",
+      "expect": "accept",
+      "value": {
+        "currency": "BTC",
+        "amount": "0.00000001",
+        "scale": 8
+      }
+    },
+    {
+      "name": "money/reject-amount-as-number",
+      "schema": "money.schema.json",
+      "expect": "reject",
+      "value": {
+        "currency": "USD",
+        "amount": 1234.5678
+      },
+      "note": "CRITICAL. Same rule as decimal/reject-json-number, at the money level."
+    },
+    {
+      "name": "money/reject-lowercase-currency",
+      "schema": "money.schema.json",
+      "expect": "reject",
+      "value": {
+        "currency": "usd",
+        "amount": "10.00"
+      }
+    },
+    {
+      "name": "money/reject-missing-currency",
+      "schema": "money.schema.json",
+      "expect": "reject",
+      "x-binding-level": "document",
+      "value": {
+        "amount": "10.00"
+      },
+      "note": "DOCUMENT-level. A type binding such as the Python Money class receives currency as a required argument and cannot observe a missing JSON key. Enforcement belongs to the schema layer, which rejects it. A type binding must not be credited with a check it structurally cannot perform."
+    },
+    {
+      "name": "money/reject-extra-field",
+      "schema": "money.schema.json",
+      "expect": "reject",
+      "x-binding-level": "document",
+      "value": {
+        "currency": "USD",
+        "amount": "10.00",
+        "unexpected": true
+      },
+      "note": "DOCUMENT-level. additionalProperties:false is a schema concern. Money is a closed object; additive tolerance applies to envelopes, not to the financial value itself."
+    },
+    {
+      "name": "quantity/accept-with-venue-scale",
+      "schema": "quantity.schema.json",
+      "expect": "accept",
+      "value": {
+        "value": "0.5",
+        "unit": "BASE_ASSET",
+        "scale": 8
+      }
+    },
+    {
+      "name": "quantity/reject-value-as-number",
+      "schema": "quantity.schema.json",
+      "expect": "reject",
+      "value": {
+        "value": 0.5,
+        "unit": "BASE_ASSET"
+      }
+    },
+    {
+      "name": "quantity/reject-unknown-unit",
+      "schema": "quantity.schema.json",
+      "expect": "reject",
+      "value": {
+        "value": "1",
+        "unit": "FURLONG"
+      },
+      "note": "Unknown enum values are treated as unsupported, never silently mapped (docs/03 compatibility)."
+    },
+    {
+      "name": "timestamp/accept-nanoseconds",
+      "schema": "timestamp.schema.json",
+      "expect": "accept",
+      "value": "2026-09-28T10:17:46.123456789Z"
+    },
+    {
+      "name": "timestamp/accept-no-fraction",
+      "schema": "timestamp.schema.json",
+      "expect": "accept",
+      "value": "2026-09-28T10:17:46Z"
+    },
+    {
+      "name": "timestamp/reject-non-utc-offset",
+      "schema": "timestamp.schema.json",
+      "expect": "reject",
+      "value": "2026-09-28T10:17:46+07:00",
+      "note": "Offsets are normalized at the transport edge and never stored (docs/03)."
+    },
+    {
+      "name": "timestamp/reject-space-separator",
+      "schema": "timestamp.schema.json",
+      "expect": "reject",
+      "value": "2026-09-28 10:17:46Z",
+      "note": "RFC 3339 requires 'T'."
+    },
+    {
+      "name": "timestamp/reject-bare-local",
+      "schema": "timestamp.schema.json",
+      "expect": "reject",
+      "value": "2026-09-28T10:17:46"
+    },
+    {
+      "name": "timestamp/reject-month-13",
+      "schema": "timestamp.schema.json",
+      "expect": "reject",
+      "value": "2026-13-01T00:00:00Z"
+    },
+    {
+      "name": "timestamp/reject-picosecond-fraction",
+      "schema": "timestamp.schema.json",
+      "expect": "reject",
+      "value": "2026-09-28T10:17:46.1234567890Z",
+      "note": "Nanosecond precision is the ceiling."
+    },
+    {
+      "name": "error/accept-risk-rejected",
+      "schema": "error.schema.json",
+      "expect": "accept",
+      "value": {
+        "code": "RISK_REJECTED",
+        "message": "Order rejected by pre-trade risk policy.",
+        "correlation_id": "cmd_01hq3k7m9x2f5rb8n0v6c4tqwx",
+        "retryable": false
+      }
+    },
+    {
+      "name": "error/accept-timeout-unknown",
+      "schema": "error.schema.json",
+      "expect": "accept",
+      "value": {
+        "code": "TIMEOUT_UNKNOWN",
+        "message": "Venue submission outcome unknown; reconciliation required.",
+        "retryable": false
+      }
+    },
+    {
+      "name": "error/reject-unknown-code",
+      "schema": "error.schema.json",
+      "expect": "reject",
+      "value": {
+        "code": "SOMETHING_BROKE",
+        "message": "..."
+      },
+      "note": "The taxonomy is closed. A new code is a contract change, not a runtime string."
+    },
+    {
+      "name": "error/reject-empty-message",
+      "schema": "error.schema.json",
+      "expect": "reject",
+      "value": {
+        "code": "INTERNAL_ERROR",
+        "message": ""
+      }
+    },
+    {
+      "name": "command/accept-complete-envelope",
+      "schema": "command-envelope.schema.json",
+      "expect": "accept",
+      "value": {
+        "command_id": "cmd_01hq3k7m9x2f5rb8n0v6c4tqwx",
+        "command_type": "order.place",
+        "schema_version": "1.0.0",
+        "correlation_id": "cmd_01hq3k7m9x2f5rb8n0v6c4tqwx",
+        "causation_id": null,
+        "actor_id": "trader-01",
+        "actor_type": "HUMAN",
+        "environment": "paper",
+        "requested_at": "2026-09-28T10:17:46.123456789Z",
+        "idempotency_key": "order-place-trader-01-20260928-001",
+        "payload": {}
+      }
+    },
+    {
+      "name": "command/accept-null-causation",
+      "schema": "command-envelope.schema.json",
+      "expect": "accept",
+      "value": {
+        "command_id": "cmd_01hq3k7m9x2f5rb8n0v6c4tqxx",
+        "command_type": "risk.halt.closed",
+        "schema_version": "1.0.0",
+        "correlation_id": "cmd_01hq3k7m9x2f5rb8n0v6c4tqxx",
+        "causation_id": null,
+        "actor_id": "risk-engine",
+        "actor_type": "SYSTEM",
+        "environment": "paper",
+        "requested_at": "2026-09-28T10:17:46.000000000Z",
+        "idempotency_key": "halt-closed-20260928-001",
+        "payload": {}
+      }
+    },
+    {
+      "name": "command/reject-missing-idempotency-key",
+      "schema": "command-envelope.schema.json",
+      "expect": "reject",
+      "value": {
+        "command_id": "cmd_01hq3k7m9x2f5rb8n0v6c4tqwx",
+        "command_type": "order.place",
+        "schema_version": "1.0.0",
+        "correlation_id": "cmd_01hq3k7m9x2f5rb8n0v6c4tqwx",
+        "causation_id": null,
+        "actor_id": "trader-01",
+        "actor_type": "HUMAN",
+        "environment": "paper",
+        "requested_at": "2026-09-28T10:17:46.123456789Z",
+        "payload": {}
+      },
+      "note": "CRITICAL. Every externally initiated mutating command requires an idempotency key (docs/03). Its absence is a rejection, not a default."
+    },
+    {
+      "name": "command/reject-unknown-environment",
+      "schema": "command-envelope.schema.json",
+      "expect": "reject",
+      "value": {
+        "command_id": "cmd_01hq3k7m9x2f5rb8n0v6c4tqwx",
+        "command_type": "order.place",
+        "schema_version": "1.0.0",
+        "correlation_id": "cmd_01hq3k7m9x2f5rb8n0v6c4tqwx",
+        "causation_id": null,
+        "actor_id": "trader-01",
+        "actor_type": "HUMAN",
+        "environment": "production",
+        "requested_at": "2026-09-28T10:17:46.123456789Z",
+        "idempotency_key": "order-place-trader-01-20260928-001",
+        "payload": {}
+      },
+      "note": "The environment set is closed. 'production' is not an environment; inventing aliases would break environment isolation (docs/01 §4)."
+    },
+    {
+      "name": "command/reject-unknown-actor-type",
+      "schema": "command-envelope.schema.json",
+      "expect": "reject",
+      "value": {
+        "command_id": "cmd_01hq3k7m9x2f5rb8n0v6c4tqwx",
+        "command_type": "order.place",
+        "schema_version": "1.0.0",
+        "correlation_id": "cmd_01hq3k7m9x2f5rb8n0v6c4tqwx",
+        "causation_id": null,
+        "actor_id": "robot-7",
+        "actor_type": "ROBOT",
+        "environment": "paper",
+        "requested_at": "2026-09-28T10:17:46.123456789Z",
+        "idempotency_key": "order-place-robot-7-20260928-001",
+        "payload": {}
+      }
+    },
+    {
+      "name": "command/reject-non-semver-version",
+      "schema": "command-envelope.schema.json",
+      "expect": "reject",
+      "value": {
+        "command_id": "cmd_01hq3k7m9x2f5rb8n0v6c4tqwx",
+        "command_type": "order.place",
+        "schema_version": "1.0",
+        "correlation_id": "cmd_01hq3k7m9x2f5rb8n0v6c4tqwx",
+        "causation_id": null,
+        "actor_id": "trader-01",
+        "actor_type": "HUMAN",
+        "environment": "paper",
+        "requested_at": "2026-09-28T10:17:46.123456789Z",
+        "idempotency_key": "order-place-trader-01-20260928-001",
+        "payload": {}
+      }
+    },
+    {
+      "name": "event/accept-complete-envelope",
+      "schema": "event-envelope.schema.json",
+      "expect": "accept",
+      "value": {
+        "event_id": "evt_01hq3k7m9x2f5rb8n0v6c4tqyx",
+        "event_type": "order.accepted",
+        "schema_version": "1.0.0",
+        "aggregate_type": "order",
+        "aggregate_id": "ord_01hq3k7m9x2f5rb8n0v6c4tqwx",
+        "correlation_id": "cmd_01hq3k7m9x2f5rb8n0v6c4tqwx",
+        "causation_id": "cmd_01hq3k7m9x2f5rb8n0v6c4tqwx",
+        "producer_id": "oms",
+        "occurred_at": "2026-09-28T10:17:46.123456789Z",
+        "recorded_at": "2026-09-28T10:17:46.140000000Z",
+        "sequence": 3,
+        "environment": "paper",
+        "payload": {}
+      }
+    },
+    {
+      "name": "event/reject-sequence-zero",
+      "schema": "event-envelope.schema.json",
+      "expect": "reject",
+      "value": {
+        "event_id": "evt_01hq3k7m9x2f5rb8n0v6c4tqyx",
+        "event_type": "order.accepted",
+        "schema_version": "1.0.0",
+        "aggregate_type": "order",
+        "aggregate_id": "ord_01hq3k7m9x2f5rb8n0v6c4tqwx",
+        "correlation_id": "cmd_01hq3k7m9x2f5rb8n0v6c4tqwx",
+        "causation_id": "cmd_01hq3k7m9x2f5rb8n0v6c4tqwx",
+        "producer_id": "oms",
+        "occurred_at": "2026-09-28T10:17:46.123456789Z",
+        "recorded_at": "2026-09-28T10:17:46.140000000Z",
+        "sequence": 0,
+        "environment": "paper"
+      },
+      "note": "Per-aggregate sequence starts at 1. A zero or gap is a detectable anomaly (docs/01 §8)."
+    },
+    {
+      "name": "event/reject-mismatched-aggregate-id-prefix",
+      "schema": "event-envelope.schema.json",
+      "expect": "reject",
+      "value": {
+        "event_id": "evt_01hq3k7m9x2f5rb8n0v6c4tqyx",
+        "event_type": "order.accepted",
+        "schema_version": "1.0.0",
+        "aggregate_type": "order",
+        "aggregate_id": "str_01hq3k7m9x2f5rb8n0v6c4tqwx",
+        "correlation_id": "cmd_01hq3k7m9x2f5rb8n0v6c4tqwx",
+        "causation_id": "cmd_01hq3k7m9x2f5rb8n0v6c4tqwx",
+        "producer_id": "oms",
+        "occurred_at": "2026-09-28T10:17:46.123456789Z",
+        "recorded_at": "2026-09-28T10:17:46.140000000Z",
+        "sequence": 1,
+        "environment": "paper"
+      },
+      "note": "aggregate_type 'order' requires an ord_ identifier. Prefix/type agreement is a binding-level check, not only a schema pattern."
+    },
+    {
+      "name": "pagination/accept-limit-only",
+      "schema": "pagination.schema.json",
+      "expect": "accept",
+      "value": {
+        "limit": 100,
+        "order": "desc"
+      }
+    },
+    {
+      "name": "pagination/accept-with-cursor",
+      "schema": "pagination.schema.json",
+      "expect": "accept",
+      "value": {
+        "limit": 50,
+        "cursor": "eyJzZXEiOjN9",
+        "order": "asc"
+      }
+    },
+    {
+      "name": "pagination/reject-limit-zero",
+      "schema": "pagination.schema.json",
+      "expect": "reject",
+      "value": {
+        "limit": 0
+      }
+    },
+    {
+      "name": "pagination/reject-limit-over-maximum",
+      "schema": "pagination.schema.json",
+      "expect": "reject",
+      "value": {
+        "limit": 10000
+      }
+    },
+    {
+      "name": "pagination/reject-limit-as-string",
+      "schema": "pagination.schema.json",
+      "expect": "reject",
+      "value": {
+        "limit": "100"
+      },
+      "note": "A non-financial count may be a JSON number, but it must be a real integer and not a quoted string."
+    },
+    {
+      "name": "pagination/reject-unknown-order",
+      "schema": "pagination.schema.json",
+      "expect": "reject",
+      "value": {
+        "limit": 10,
+        "order": "random"
+      }
+    }
+  ],
+  "binding_conformance": {
+    "description": "Each language binding runs this corpus and reports a result per case. CI fails the merge when a binding disagrees with any case.",
+    "status_by_binding": {
+      "go": "VERIFIED",
+      "typescript": "NOT_IMPLEMENTED",
+      "python": "NOT_IMPLEMENTED"
+    },
+    "note": "This repository intentionally ships the corpus before the bindings. A binding that is not present is reported as NOT_IMPLEMENTED, never as PASS."
+  }
+}

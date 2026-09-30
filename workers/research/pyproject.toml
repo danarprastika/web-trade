@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "webtrade-research"
+version = "0.1.0"
+description = "Offline research workloads for the web-trade platform. Non-authoritative by construction."
+requires-python = "==3.14.*"
+readme = "README.md"
+
+# Pinned exactly, per docs/00_README.md toolchain lifecycle: the latest stable
+# security-supported release selected at bootstrap. CI must fail on an unpinned
+# dependency or a lockfile drift (docs/02_POLYGLOT_ENGINEERING_STANDARD.md section 10).
+#
+# NOTE: numpy is used for research numerics ONLY. It is float64 and therefore
+# deliberately absent from any authoritative path. Authoritative financial arithmetic
+# is Go plus PostgreSQL decimal; no float crosses a financial contract (docs/03).
+dependencies = [
+    "numpy==2.5.1",
+    "pydantic==2.12.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.0.1",
+    "ruff==0.15.1",
+    "mypy==1.19.1",
+    "jsonschema==4.26.1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/webtrade_research"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "S", "A", "C4", "DTZ", "T20"]
+# S (bandit) is enabled deliberately: research code must not grow credential handling
+# or subprocess use. A finding here is an authority-boundary warning, not a style note.
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+warn_return_any = true
+disallow_untyped_defs = true

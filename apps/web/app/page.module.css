@@ -1,0 +1,274 @@
+/* Operator console layout.
+ *
+ * Hierarchy is by surface elevation and whitespace, not by shadow or size. Everything
+ * sits on one column because a control surface is read in a fixed order, and horizontal
+ * scanning in an operations tool reliably causes someone to miss the halt banner.
+ */
+
+.shell {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-5) var(--space-7);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+/* ---- Masthead ---- */
+
+.masthead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  font-size: var(--space-4);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.brandSub {
+  display: block;
+  font-size: var(--space-3);
+  font-weight: 400;
+  color: var(--fg-muted);
+  letter-spacing: 0;
+}
+
+/* ---- The live-trading banner ----
+ *
+ * Deliberately the loudest element on the page. When live capability is disabled, that
+ * is the single most important fact an operator needs, and it should never be something
+ * an operator has to go looking for.
+ */
+
+.banner {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  padding: var(--space-4);
+  border: 1px solid var(--status-danger);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  background: var(--status-danger-bg);
+}
+
+.bannerIcon {
+  flex: none;
+  font-weight: 700;
+  color: var(--status-danger);
+  font-family: var(--font-mono);
+  line-height: 1.4;
+}
+
+.bannerTitle {
+  font-weight: 600;
+  color: var(--status-danger);
+}
+
+.bannerBody {
+  color: var(--fg-secondary);
+  margin-top: var(--space-1);
+}
+
+/* ---- Panels ---- */
+
+.panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  overflow: hidden;
+}
+
+.panelHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+}
+
+.panelTitle {
+  font-size: var(--space-3);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--fg-secondary);
+}
+
+.panelNote {
+  font-size: var(--space-3);
+  color: var(--fg-muted);
+}
+
+.panelBody {
+  padding: var(--space-4);
+}
+
+/* ---- Status pills ----
+ *
+ * Colour is never the only signal. Each pill carries a text label, and the verified state
+ * also gets a heavier border so the distinction survives greyscale and colour-vision
+ * differences.
+ */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 2px var(--space-2);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: var(--space-3);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.pillIdle {
+  background: var(--status-idle-bg);
+  color: var(--status-idle);
+  border-color: var(--border);
+}
+
+.pillOk {
+  background: var(--status-ok-bg);
+  color: var(--status-ok);
+  border-color: currentColor;
+  font-weight: 600;
+}
+
+.pillWarn {
+  background: var(--status-warn-bg);
+  color: var(--status-warn);
+  border-color: currentColor;
+}
+
+.pillDanger {
+  background: var(--status-danger-bg);
+  color: var(--status-danger);
+  border-color: currentColor;
+  font-weight: 600;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+/* ---- Gate table ---- */
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--space-3);
+}
+
+.table caption {
+  text-align: left;
+  color: var(--fg-muted);
+  padding-bottom: var(--space-3);
+}
+
+.table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+.gateId {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--fg-primary);
+  white-space: nowrap;
+}
+
+/* ---- Authority chain ---- */
+
+.chain {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  counter-reset: authority;
+}
+
+.chain li {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.chainIndex {
+  font-family: var(--font-mono);
+  font-size: var(--space-3);
+  color: var(--fg-muted);
+  text-align: right;
+  padding-top: 1px;
+}
+
+.chainItem {
+  /* One text flow so assistive technology reads the name and rule as a sentence.
+     The block display gives the visual line break without a <br>. */
+  color: var(--fg-secondary);
+  font-size: var(--space-3);
+}
+
+.chainName {
+  display: block;
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.chainRule {
+  color: var(--fg-secondary);
+  font-size: var(--space-3);
+}
+
+/* ---- Callout ---- */
+
+.callout {
+  padding: var(--space-3) var(--space-4);
+  border-left: 3px solid var(--border-strong);
+  background: var(--bg-sunken);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  color: var(--fg-secondary);
+  font-size: var(--space-3);
+}
+
+.footer {
+  color: var(--fg-muted);
+  font-size: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}

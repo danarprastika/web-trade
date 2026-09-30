@@ -1,0 +1,22 @@
+# Decision Register — Project Brain
+
+Project-local execution decisions taken during `/ecc-project-init`. These are **execution** decisions layered on top of the blueprint's ADR-001…ADR-025, which remain authoritative and unmodified.
+
+| ID | Decision | Rationale | Status | Source |
+|---|---|---|---|---|
+| EXD-001 | `docs/` is the sole engineering authority; `.kilo/ecc/project-brain/` records execution state and never overrides it | Blueprint is final and digest-verified; Project Brain is operational state | Accepted | `docs/00`, `docs/25` §9 |
+| EXD-002 | Greenfield Go implementation of the canonical repository shape; the deleted FastAPI/Next.js code is not restored | A Python authoritative backend violates ADR-001 and ADR-003 | Proposed — awaiting approval | ADR-001, ADR-003 |
+| EXD-003 | Implementation scope is Phases 1-7 (G0-G10). Phase 8 / G11 is out of scope and remains deny-by-default | G11 needs external legal/venue eligibility, real credentials, and two distinct human approvers — not engineering deliverables | Proposed — awaiting approval | `docs/11` G11, `docs/25` §3.7 |
+| EXD-004 | Single-owner serial execution; delegation reserved for read-only review passes | Zero code exists; the critical path is one Go control plane; parallel edits in `/services/control-plane` would overlap write scopes | Proposed — awaiting approval | V7 write-scope rules |
+| EXD-005 | First delivery boundary is G0 + G1 (Phases 1-2) | Produces the canonical types, contracts, migrations, and domain core that every later phase depends on; establishes the critical path before breadth | Proposed — awaiting approval | `docs/13` |
+| EXD-006 | Terraform production infrastructure is scaffolded but not applied to any cloud | Terraform is not installed on this host; applying infrastructure is a separate, higher-risk action requiring explicit approval | Proposed — awaiting approval | Toolchain probe |
+| EXD-007 | Keycloak and OPA are consumed as external services behind defined interfaces, not built in this repository; local dev uses a stub that cannot reach a `live` environment | Blueprint assigns them as reference components; building an IdP would create a second identity authority | Proposed — awaiting approval | `docs/06`, `docs/21`, ADR-017, ADR-018 |
+| EXD-008 | No secret is written to any Project Brain artifact or tracked file; `.env.example` templates only | Blueprint requires secrets isolation (G9) | Accepted | `docs/02` §10, `docs/25` §5 |
+| EXD-009 | Dockerfile/dev environment assumes PostgreSQL 17 in Docker; operator must start the Docker daemon | `docker info` failed — daemon not running; blocks all persistence work | Accepted, blocked on operator | Toolchain probe |
+| EXD-010 | `docs/00_README.md` is treated as read-only despite its editorial duplication defect | Docs are digest-bound by the manifest; any edit invalidates G0. Fixing the duplication is a separate, manifest-updating change | Accepted | `docs/11` G0, RISK-06 |
+
+## Open decisions requiring user input
+
+- **OD-1** Confirm EXD-002 (greenfield Go) versus restoring the deleted code.
+- **OD-2** Confirm EXD-003 (G11 out of scope).
+- **OD-3** Confirm EXD-005 (first delivery boundary G0+G1) versus a wider first slice.

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.web-trade.dev/schema/identifier.schema.json",
+  "title": "Identifier",
+  "description": "Typed prefix plus lowercase Crockford Base32 payload (docs/03). Crockford Base32 omits I, L, O, U to avoid transcription ambiguity with 1 and 0.",
+  "type": "string",
+  "pattern": "^(cmd|evt|ord|str|mdl|run|pos|led)_[0-9a-hjkmnp-tv-z]{26}$",
+  "maxLength": 30,
+  "x-alphabet": {
+    "name": "Crockford Base32",
+    "digits": "0123456789",
+    "letters": "ABCDEFGHJKMNPQRSTVWXYZ",
+    "excluded": ["I", "L", "O", "U"],
+    "casing": "lowercase"
+  },
+  "x-prefixes": {
+    "cmd_": "Command",
+    "evt_": "Event",
+    "ord_": "Order",
+    "str_": "Strategy",
+    "mdl_": "Model",
+    "run_": "Run (backtest, experiment, or deployment)",
+    "pos_": "Position",
+    "led_": "Ledger entry"
+  },
+  "x-invariants": [
+    "Payload length is fixed at 26 characters (130 bits of entropy).",
+    "Prefix characters lie outside the payload alphabet, so a prefix can never be confused with payload data.",
+    "Identifiers are globally unique and are never reused after deletion.",
+    "Case is significant in the sense that the canonical form is lowercase; producers MUST NOT emit uppercase."
+  ],
+  "examples": ["cmd_01hq3k7m9x2f5rb8n0v6c4tqwx", "ord_01hq3k7m9x2f5rb8n0v6c4tqwx"]
+}

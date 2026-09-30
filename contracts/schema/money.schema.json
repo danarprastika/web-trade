@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.web-trade.dev/schema/money.schema.json",
+  "title": "Money",
+  "description": "A monetary amount bound to a currency. Never a bare number. No IEEE-754 floating point may cross a financial contract (docs/03).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["currency", "amount"],
+  "properties": {
+    "currency": {
+      "description": "ISO 4217 alphabetic code for fiat, or an explicitly configured asset code for digital assets.",
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9]{1,11}$",
+      "examples": ["USD", "EUR", "IDR", "JPY", "BTC", "ETH"]
+    },
+    "amount": {
+      "$ref": "decimal.schema.json",
+      "description": "Base-10 decimal string. Sign is explicit; there is no implicit or defaulted sign."
+    },
+    "scale": {
+      "description": "Optional explicit minor-unit scale when the venue or asset requires it. Absent means the amount's own digit count is authoritative.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 38
+    }
+  },
+  "x-invariants": [
+    "Amount precision must be validated against the currency's configured scale before it reaches a venue.",
+    "A currency mismatch between an amount and a venue or account is a hard rejection, not a conversion.",
+    "Zero must be written with an explicit sign convention and currency; it is not a null substitute."
+  ],
+  "examples": [
+    { "currency": "USD", "amount": "1234.5678" },
+    { "currency": "IDR", "amount": "1500000" },
+    { "currency": "BTC", "amount": "0.00000001", "scale": 8 }
+  ]
+}

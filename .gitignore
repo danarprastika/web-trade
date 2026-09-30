@@ -1,0 +1,72 @@
+# ---- Secrets: never tracked (docs/02 §10, docs/25 §5, EXD-008) ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+!**/secrets/*.example
+
+# ---- Go ----
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+services/control-plane/bin/
+components/*/bin/
+adapters/venues/bin/
+
+# ---- Node / Next.js ----
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+# Hypothesis writes a per-directory example database plus a root constants cache. Both are
+# machine-generated, machine-specific, and meaningless outside the run that produced them.
+# The backtest properties run with derandomize=True, so the database is a pure cache here: it
+# can never improve a future run's shrinking, and tracking it would add hundreds of generated
+# files to the initial platform commit.
+.hypothesis/
+
+# ---- Local infrastructure state ----
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.*
+infra/terraform/*.tfvars
+!infra/terraform/*.tfvars.example
+
+# ---- Test and coverage output ----
+coverage/
+coverage.out
+*.coverprofile
+test-results/
+playwright-report/
+
+# ---- Editors and OS ----
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ---- Project Brain runtime scratch (specs are tracked, scratch is not) ----
+.kilo/ecc/project-brain/*.tmp
+.kilo/ecc/project-brain/*.append.tmp

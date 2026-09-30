@@ -1,0 +1,67 @@
+{
+  "gate": "G0",
+  "verdict": "PENDING_HUMAN_ATTESTATION",
+  "commit": "15d978ff5658c0646a63ce5ecc74b998e8bc05a4",
+  "docs_dirty": false,
+  "executed_at": "2026-09-29T11:16:45Z",
+  "executed_by": "scripts/verify_spec_gate.py",
+  "human_reviewer": null,
+  "criteria": [
+    {
+      "id": "G0.1",
+      "description": "All documents listed in the manifest exist",
+      "result": "PASS",
+      "mechanically_verified": true,
+      "detail": "all 26 listed documents are present and document_count agrees"
+    },
+    {
+      "id": "G0.2",
+      "description": "Every document matches its declared byte length",
+      "result": "PASS",
+      "mechanically_verified": true,
+      "detail": "26/26 byte lengths match"
+    },
+    {
+      "id": "G0.3",
+      "description": "Every SHA-256 digest matches the exact packaged bytes",
+      "result": "PASS",
+      "mechanically_verified": true,
+      "detail": "26/26 digests match"
+    },
+    {
+      "id": "G0.4",
+      "description": "No unlisted document is present in docs/",
+      "result": "PASS",
+      "mechanically_verified": true,
+      "detail": "docs/ contains exactly the 27 manifest-listed files and nothing else"
+    },
+    {
+      "id": "G0.5",
+      "description": "No unlisted document or legacy version is present",
+      "result": "PASS",
+      "mechanically_verified": true,
+      "detail": "no draft/superseded/archived/versioned-path markers found in the repository"
+    },
+    {
+      "id": "G0.6",
+      "description": "No two documents are byte-identical (mechanical duplicate detection)",
+      "result": "PASS",
+      "mechanically_verified": true,
+      "detail": "all 26 document digests are distinct"
+    },
+    {
+      "id": "G0.7",
+      "description": "No unresolved architecture choice remains",
+      "result": "PASS",
+      "mechanically_verified": true,
+      "detail": "all 15 status-bearing ADRs are Accepted; 10 additional binding ADRs (ADR-016\u2013ADR-025) carry a rationale and are implicit-accepted by inclusion in a FINAL package"
+    },
+    {
+      "id": "G0.8",
+      "description": "Named human reviewer attests the specification package",
+      "result": "REQUIRES_HUMAN_ATTESTATION",
+      "mechanically_verified": false,
+      "detail": "Digest, inventory, legacy-marker and decision-status checks are mechanical and have run. Semantic duplicate authority and overall reviewer sign-off are human judgements and are NOT asserted by this script."
+    }
+  ]
+}

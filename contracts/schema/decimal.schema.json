@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.web-trade.dev/schema/decimal.schema.json",
+  "title": "Decimal",
+  "description": "Base-10 decimal represented as a STRING. IEEE-754 floating point is prohibited from crossing any financial contract (docs/03). A JSON number is never an acceptable representation of a decimal value.",
+  "type": "string",
+  "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+  "maxLength": 40,
+  "examples": ["0", "1234.5678", "-0.0001", "-999999999999.99"],
+  "x-invariants": [
+    "Must be parsed with a decimal library, never a binary float.",
+    "Serialization must round-trip exactly: parse(serialize(x)) == x for all producers.",
+    "Scale is significant for money only where the contract declares an explicit scale; trailing zeros are otherwise preserved verbatim to avoid silent precision loss."
+  ]
+}

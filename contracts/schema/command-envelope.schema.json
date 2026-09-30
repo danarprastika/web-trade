@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.web-trade.dev/schema/command-envelope.schema.json",
+  "title": "CommandEnvelope",
+  "description": "A request to change authoritative state. Every externally initiated mutating command requires an idempotency key scoped to actor, endpoint, and environment (docs/03). Replays return the original command result.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "command_id",
+    "command_type",
+    "schema_version",
+    "correlation_id",
+    "causation_id",
+    "actor_id",
+    "actor_type",
+    "environment",
+    "requested_at",
+    "idempotency_key",
+    "payload"
+  ],
+  "properties": {
+    "command_id": {
+      "description": "Unique identity of this command. Prefix cmd_.",
+      "$ref": "identifier.schema.json",
+      "pattern": "^cmd_[0-9a-hjkmnp-tv-z]{26}$"
+    },
+    "command_type": {
+      "description": "Dotted command name, e.g. order.place or risk.halt.closed.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$",
+      "maxLength": 128,
+      "examples": ["order.place", "order.cancel", "risk.pretrade.evaluate", "config.snapshot.publish"]
+    },
+    "schema_version": {
+      "description": "Semantic version of the payload contract. Consumers must tolerate additive fields; a breaking change requires a new major version plus dual-read/dual-write migration (docs/03).",
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "examples": ["1.0.0"]
+    },
+    "correlation_id": {
+      "description": "Groups every command and event belonging to one logical workflow, across languages and processes.",
+      "$ref": "identifier.schema.json",
+      "pattern": "^(cmd|evt)_[0-9a-hjkmnp-tv-z]{26}$"
+    },
+    "causation_id": {
+      "description": "Identity of the command or event that directly caused this one. Null only for an externally initiated root command.",
+      "oneOf": [
+        { "$ref": "identifier.schema.json" },
+        { "type": "null" }
+      ]
+    },
+    "actor_id": {
+      "description": "Authenticated subject or workload identity. Authorization is always evaluated server-side; the UI, Telegram, and any agent are untrusted callers (docs/02, docs/25 §3.6).",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "actor_type": {
+      "type": "string",
+      "enum": ["HUMAN", "SERVICE", "AGENT", "SYSTEM"]
+    },
+    "environment": {
+      "description": "Target environment. Commands are namespace-isolated: dev, test, staging, paper, shadow, live. Live credentials are never available to lower environments (docs/01 §4, ADR-012).",
+      "type": "string",
+      "enum": ["dev", "test", "staging", "paper", "shadow", "live"]
+    },
+    "requested_at": {
+      "$ref": "timestamp.schema.json"
+    },
+    "idempotency_key": {
+      "description": "Required for every externally initiated mutating command. Scoped to actor, endpoint, and environment. Enforced by a database uniqueness constraint, never by application memory (docs/03, WI-123). Replays return the original result.",
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 255
+    },
+    "trace_context": {
+      "description": "W3C trace propagation fields. Propagated across every language boundary (docs/02).",
+      "type": "object",
+      "additionalProperties": true
+    },
+    "payload": {
+      "description": "Command body. Validated against the contract named by command_type and schema_version.",
+      "type": "object"
+    }
+  },
+  "x-invariants": [
+    "A command is a request, never a state assertion. The server decides the resulting state.",
+    "actor_id and actor_type are supplied by the trusted edge, not by the caller. A caller-supplied actor is rejected, not sanitized.",
+    "No command may bypass the Risk Engine for a risk-increasing transition (docs/25 §3.1).",
+    "No command may clear a halt. Halt is monotonic (docs/25 §3.9)."
+  ],
+  "examples": [
+    {
+      "command_id": "cmd_01hq3k7m9x2f5rb8n0v6c4tqwx",
+      "command_type": "order.place",
+      "schema_version": "1.0.0",
+      "correlation_id": "cmd_01hq3k7m9x2f5rb8n0v6c4tqwx",
+      "causation_id": null,
+      "actor_id": "trader-01",
+      "actor_type": "HUMAN",
+      "environment": "paper",
+      "requested_at": "2026-09-28T10:17:46.123456789Z",
+      "idempotency_key": "order-place-trader-01-20260928-001"
+    }
+  ]
+}

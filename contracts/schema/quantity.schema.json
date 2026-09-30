@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.web-trade.dev/schema/quantity.schema.json",
+  "title": "Quantity",
+  "description": "An instrument quantity or price, represented as a base-10 decimal string plus explicit scale metadata where the venue requires it (docs/03).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["value", "unit"],
+  "properties": {
+    "value": {
+      "$ref": "decimal.schema.json",
+      "description": "Base-10 decimal string."
+    },
+    "unit": {
+      "description": "Unit of measure for the quantity.",
+      "type": "string",
+      "enum": ["BASE_ASSET", "QUOTE_ASSET", "CONTRACT", "LOT", "SHARE", "UNITS"]
+    },
+    "scale": {
+      "description": "Explicit scale metadata required by the venue. Venue precision is validated before submission (docs/03).",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 38
+    }
+  },
+  "x-invariants": [
+    "Venue precision and lot size are validated before submission; a non-conforming quantity is rejected, never rounded silently.",
+    "Rounding is only ever performed by an explicitly named, audited rounding policy, and the applied policy is recorded with the decision.",
+    "Positive and negative quantities are both valid; direction is carried by the order side, not the sign of the quantity."
+  ],
+  "examples": [
+    { "value": "0.5", "unit": "BASE_ASSET", "scale": 8 },
+    { "value": "100", "unit": "SHARE" }
+  ]
+}

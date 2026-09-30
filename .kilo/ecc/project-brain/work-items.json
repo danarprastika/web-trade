@@ -1,0 +1,937 @@
+{
+  "schema": "ecc.project-brain/work-items/v7",
+  "plan_version": "1.0.0",
+  "generated_at": "2026-09-28T13:55:00Z",
+  "items": [
+    {
+      "id": "WI-000",
+      "phase": "Gate 0",
+      "title": "Specification integrity verification (G0)",
+      "status": "IN_PROGRESS",
+      "evidence_ref": [
+        "EV-001",
+        "EV-016"
+      ],
+      "blocker": "Corrected from COMPLETED on review. Three of four acceptance criteria are met and machine-verified, but the fourth \u00e2\u20ac\u201d 'gate report records reviewer, commit, timestamp, command output, pass/fail' \u00e2\u20ac\u201d requires a named human reviewer, and none has been assigned. The G0 gate therefore reports PENDING_HUMAN_ATTESTATION, not PASS. Per docs/11, partial completion is FAIL, not a percentage. Close by: assign a named reviewer who attests the specification package and records their identity in evidence/gates/G0-gate-report.json (human_reviewer field).",
+      "partial_results": "scripts/verify_spec_gate.py implements all G0 criteria mechanically; 22 tests prove it detects single-byte tampering, semantically-neutral rewrites, appended/deleted documents, manifest count drift, legacy filename and versioned-directory markers, duplicate document bytes, and open ADRs. 7/7 mechanical criteria PASS on the real 26-document package.",
+      "acceptance_criteria": [
+        "All 26 manifest documents exist",
+        "Every SHA-256 digest matches packaged bytes",
+        "No unlisted or legacy document present",
+        "Gate report records reviewer, commit, timestamp, command output, pass/fail"
+      ],
+      "dependencies": [],
+      "write_scope": []
+    },
+    {
+      "id": "WI-101",
+      "phase": 1,
+      "title": "Canonical repository scaffold",
+      "status": "COMPLETED",
+      "evidence_ref": [
+        "EV-005"
+      ],
+      "acceptance_criteria": [
+        "All 14 canonical directories exist: apps/web, services/control-plane, workers/research, workers/backtest, components/risk-engine, components/oms, components/reconciliation, adapters/venues, contracts, db/migrations, infra/terraform, ops/runbooks, tests, docs",
+        "docs/ contents are preserved unmodified (digest re-verified)"
+      ],
+      "dependencies": [
+        "WI-000"
+      ],
+      "write_scope": [
+        "apps/web",
+        "services/control-plane",
+        "workers/*",
+        "components/*",
+        "adapters/*",
+        "contracts",
+        "db/migrations",
+        "infra/terraform",
+        "ops/runbooks",
+        "tests"
+      ],
+      "dependency_exemptions": {
+        "WI-000": "WI-000 is G0 specification integrity, whose seventh criterion requires a named human reviewer to attest the packaged specification. No automated run can satisfy that, and it is not a prerequisite for creating directories. WI-101 completed the scaffold on the real 26-document package and left docs/ byte-identical, which is what G0 integrity is meant to protect. Completing the scaffold is not a claim that G0 passed; G0 correctly still reports PENDING_HUMAN_ATTESTATION."
+      }
+    },
+    {
+      "id": "WI-102",
+      "phase": 1,
+      "title": "Go control-plane module and pinned toolchain",
+      "status": "COMPLETED",
+      "acceptance_criteria": [
+        "go.mod created with go 1.26.2 directive",
+        "go.sum committed; go mod verify passes",
+        "No floating dependency versions"
+      ],
+      "dependencies": [
+        "WI-101"
+      ],
+      "write_scope": [
+        "services/control-plane",
+        "components/*"
+      ],
+      "evidence_ref": [
+        "EV-020",
+        "EV-021"
+      ],
+      "completed_results": [
+        "go.mod created with a go 1.26.2 directive: satisfied for all six modules (adapters/venues, components/oms, components/reconciliation, components/risk-engine, contracts/go, services/control-plane).",
+        "go mod verify passes: satisfied for all six modules, each reporting 'all modules verified' with exit 0.",
+        "No floating dependency versions: satisfied, and by the strongest available means. There are zero require blocks across all six modules.",
+        "EXCEPTION on the literal text 'go.sum committed': no go.sum exists, because go.sum records hashes for external modules and there are none. The acceptance criterion is left unmodified and the deviation is recorded in EV-020 for human review."
+      ]
+    },
+    {
+      "id": "WI-103",
+      "phase": 1,
+      "title": "Next.js operator UI scaffold and pinned toolchain",
+      "status": "COMPLETED",
+      "evidence_ref": [
+        "EV-012",
+        "EV-013"
+      ],
+      "acceptance_criteria": [
+        "App Router project under apps/web",
+        "package-lock.json committed",
+        "No direct database access, no broker credentials, no order-submission endpoint outside the Go API"
+      ],
+      "dependencies": [
+        "WI-101"
+      ],
+      "write_scope": [
+        "apps/web"
+      ]
+    },
+    {
+      "id": "WI-104",
+      "phase": 1,
+      "title": "Python research workspace and pinned toolchain",
+      "status": "COMPLETED",
+      "evidence_ref": [
+        "EV-010",
+        "EV-011"
+      ],
+      "acceptance_criteria": [
+        "workers/research and workers/backtest workspaces created with pinned lockfile",
+        "No live credentials, no venue submission, no authoritative ledger write path"
+      ],
+      "dependencies": [
+        "WI-101"
+      ],
+      "write_scope": [
+        "workers/research",
+        "workers/backtest"
+      ]
+    },
+    {
+      "id": "WI-105",
+      "phase": 1,
+      "title": "Canonical contracts package",
+      "status": "COMPLETED",
+      "priority": "critical-path",
+      "evidence_ref": [
+        "EV-006",
+        "EV-007"
+      ],
+      "acceptance_criteria": [
+        "Typed prefixed Crockford Base32 identifiers (ord_, evt_, cmd_, str_, mdl_, run_, pos_, led_) defined once",
+        "Money as {currency, amount} base-10 decimal string; no IEEE-754 across a financial contract",
+        "Quantity/price decimal strings with explicit scale metadata",
+        "UTC RFC3339 nanosecond timestamps with occurred_at/recorded_at/source_timestamp",
+        "Command envelope: command_id, command_type, schema_version, correlation_id, causation_id, actor_id, actor_type, environment, requested_at, payload",
+        "Event envelope: event_id, event_type, schema_version, aggregate_type, aggregate_id, correlation_id, causation_id, producer_id, occurred_at, recorded_at, sequence, payload",
+        "Error taxonomy: VALIDATION_ERROR, AUTHENTICATION_ERROR, AUTHORIZATION_ERROR, CONFLICT, RISK_REJECTED, RATE_LIMITED, DEPENDENCY_UNAVAILABLE, TIMEOUT_UNKNOWN, DATA_STALE, RECONCILIATION_REQUIRED, INTERNAL_ERROR",
+        "Additive-field tolerance; unknown enum values treated as unsupported"
+      ],
+      "source": "docs/03_CANONICAL_CONTRACTS.md",
+      "dependencies": [
+        "WI-101"
+      ],
+      "write_scope": [
+        "contracts"
+      ]
+    },
+    {
+      "id": "WI-106",
+      "phase": 1,
+      "title": "PostgreSQL 17 migration baseline and sqlc",
+      "status": "COMPLETED",
+      "acceptance_criteria": [
+        "Expand/contract migrations run up and down against PostgreSQL 17",
+        "sqlc generates accessors; sqlc vet passes",
+        "Idempotency uniqueness enforced by database constraint",
+        "No migration requires simultaneous incompatible producer/consumer deployment"
+      ],
+      "dependencies": [
+        "WI-105"
+      ],
+      "write_scope": [
+        "db/migrations",
+        "services/control-plane"
+      ],
+      "evidence_ref": [
+        "EV-029"
+      ],
+      "completed_at": "2026-09-29T07:40:00Z"
+    },
+    {
+      "id": "WI-107",
+      "phase": 1,
+      "title": "CI pipeline: format, lint, unit, contract, SAST, dep-scan, SBOM, provenance",
+      "status": "IN_PROGRESS",
+      "evidence_ref": [
+        "EV-014",
+        "EV-015"
+      ],
+      "blocker": "No CI run has occurred: the workflow is not pushed to a remote, and the Docker-dependent jobs cannot run while the daemon is unavailable. The container-image build, gitleaks, CodeQL, govulncheck, cosign attestation, integration, and SBOM/provenance acceptance criteria are verified as configuration only, never as observed output. EV-014 records this as VERIFIED_WITH_EXCEPTION. The project-brain job added this session is unexecuted for the same reason.",
+      "partial_results": "toolchain/versions.env + scripts/verify_toolchain.py (14 checks, proven by 23 negative tests), .github/workflows/ci.yml (11 jobs, 10 actions pinned to verified commit SHAs), .github/dependabot.yml (11 ecosystems), apps/web/Dockerfile, next.config.ts standalone output, scripts/verify_spec_gate.py (G0 integrity, 7 mechanical criteria, 22 tests), scripts/verify_project_brain.py. Local sweep: 106 Python tests pass; 6/6 Go modules pass vet, build, test -race and go mod verify.",
+      "acceptance_criteria": [
+        "Every-merge job runs formatting, lint, unit tests, contract validation, SAST, dependency scan",
+        "Protected branch additionally requires integration tests and artifact build",
+        "SBOM and provenance emitted per release artifact",
+        "CI fails on unpinned dependencies or toolchain drift"
+      ],
+      "source": "docs/09, docs/02 \u00c2\u00a710",
+      "dependencies": [
+        "WI-102",
+        "WI-103",
+        "WI-104",
+        "WI-105"
+      ],
+      "write_scope": [
+        ".github/workflows"
+      ]
+    },
+    {
+      "id": "WI-108",
+      "phase": 1,
+      "title": "Local development environment (PostgreSQL 17 via Docker)",
+      "status": "COMPLETED",
+      "acceptance_criteria": [
+        "docker compose brings up PostgreSQL 17 healthy",
+        "No credential committed to the repository; env file is git-ignored and templated from .env.example",
+        "dev/test configuration namespaces isolated from paper/shadow/live"
+      ],
+      "dependencies": [
+        "WI-106"
+      ],
+      "write_scope": [
+        "infra",
+        "ops/runbooks",
+        ".env.example",
+        ".gitignore"
+      ],
+      "evidence_ref": [
+        "EV-030"
+      ],
+      "completed_at": "2026-09-29T09:55:00Z"
+    },
+    {
+      "id": "WI-110",
+      "phase": 2,
+      "title": "Canonical types and command/event envelopes (Go)",
+      "status": "COMPLETED",
+      "priority": "critical-path",
+      "acceptance_criteria": [
+        "Go types generated from or validated against /contracts",
+        "No floating-point financial arithmetic anywhere in the control plane",
+        "Unit tests cover decimal, timestamp, identifier, and error representations"
+      ],
+      "dependencies": [
+        "WI-105",
+        "WI-102"
+      ],
+      "write_scope": [
+        "services/control-plane"
+      ],
+      "evidence_ref": [
+        "EV-018",
+        "EV-019"
+      ],
+      "completed_results": [
+        "Acceptance criterion 1, Go types validated against /contracts: all nine corpus schemas are bound, and 51 of 51 cases agree (16 accept, 35 reject, 0 disagreements, 0 unimplemented). The runner was proven to detect a disagreement by injecting one.",
+        "Acceptance criterion 2, no floating-point financial arithmetic anywhere in the control plane: a guard rejects float64 and float32 in Go code outside comments and strings, scanning all six go.work modules. It skips node_modules, which ships third-party Go source, and skips its own file.",
+        "Acceptance criterion 3, unit tests cover decimal, timestamp, identifier, and error: all four are covered, along with money, quantity, pagination, and both envelopes. 69 top-level tests pass, go vet clean, gofmt clean, go test -race clean.",
+        "Strict JSON wire binding added for every canonical type, so the types can cross a service boundary. Unknown fields are rejected to make additionalProperties:false real rather than decorative, and trailing content after the document is rejected.",
+        "Pagination implemented from scratch: cursor-based with no offset field at all, so there is nothing to misuse.",
+        "contracts/fixtures/conformance.json status_by_binding.go moved from NOT_IMPLEMENTED to VERIFIED, backed by the 51/51 run. TypeScript and Python deliberately left NOT_IMPLEMENTED because neither binds all nine schemas.",
+        "contracts/README.md corrected: it claimed the Go binding is generated by oapi-codegen, which is not what exists and would not express the invariants the types carry."
+      ]
+    },
+    {
+      "id": "WI-111",
+      "phase": 2,
+      "title": "Identity and authorization context enforcement",
+      "status": "COMPLETED",
+      "acceptance_criteria": [
+        "Every command carries actor_id/actor_type and is evaluated server-side",
+        "Deny by default; no stale authorization context accepted beyond the configured revocation window",
+        "Authorization policy cannot approve or override financial risk (ADR-018)",
+        "Privileged actions require phishing-resistant step-up and exact-diff approval",
+        "Negative policy test vectors exist and pass"
+      ],
+      "source": "docs/06, docs/21, ADR-017, ADR-018",
+      "dependencies": [
+        "WI-110"
+      ],
+      "write_scope": [
+        "services/control-plane",
+        "contracts"
+      ],
+      "evidence_ref": [
+        "EV-028"
+      ],
+      "completed_at": "2026-09-29T05:05:00Z"
+    },
+    {
+      "id": "WI-112",
+      "phase": 2,
+      "title": "Typed configuration with signed immutable release snapshots",
+      "status": "COMPLETED",
+      "acceptance_criteria": [
+        "Invalid, stale, and unsigned configuration is rejected",
+        "No undocumented configuration can enter the live snapshot",
+        "Drift detection alert path implemented",
+        "Feature flags: unknown flags never grant authority; last verified safe snapshot only within configured freshness"
+      ],
+      "source": "docs/17, docs/25 \u00c2\u00a76",
+      "dependencies": [
+        "WI-110"
+      ],
+      "write_scope": [
+        "services/control-plane"
+      ],
+      "evidence_ref": [
+        "EV-023"
+      ],
+      "result": "Signed immutable configuration snapshots in services/control-plane/config. Seven-step load pipeline: strict decode, schema version agreement, structural validation of all 21 policy dimensions plus the closed flag set, approval validation including the live two-person rule, digest agreement then Ed25519 signature verification, freshness, and single-step promotion along a closed dev/test/staging/paper/shadow/live ladder. Drift comparison and a monotonic operator-facing alert are implemented. 73 top-level tests pass under -race at 94.5% statement coverage, one or more per acceptance criterion, plus a package-local float guard. Dependency WI-110 is COMPLETED, so no exemption applies. A canonical JSON Schema for the document was not added because the work item's write scope excludes contracts/; that is recorded as a caveat in EV-023 rather than silently widening scope."
+    },
+    {
+      "id": "WI-113",
+      "phase": 2,
+      "title": "Strategy lifecycle state machine",
+      "status": "COMPLETED",
+      "acceptance_criteria": [
+        "Closed state set; every transition declares actor, command, precondition, resulting state, event, idempotency key, audit record, failure behavior",
+        "Unknown states and invalid transitions rejected into a controlled path",
+        "Strategy proposes only; it holds zero financial authority"
+      ],
+      "dependencies": [
+        "WI-110"
+      ],
+      "write_scope": [
+        "services/control-plane",
+        "components/*"
+      ],
+      "evidence_ref": [
+        "EV-022"
+      ],
+      "result": "Closed state set of 10 states with 9 fully declared transitions matching the docs/04 chain exactly. Apply validates in a fixed order and returns a Rejection carrying both a canonical ErrorCode and an errors.Is-reachable cause. Authority-bearing transitions (APPROVED, DEPLOYED) are human-gated and an agent may never be the actor of record. 19 tests pass under -race at 91.8% statement coverage, including an import test proving the package holds no financial authority and a test proving DEPLOYED confers eligibility, not trading authority. Dependency WI-110 is COMPLETED, so no exemption applies."
+    },
+    {
+      "id": "WI-114",
+      "phase": 2,
+      "title": "Deterministic Risk Engine veto",
+      "status": "COMPLETED",
+      "priority": "critical-path",
+      "acceptance_criteria": [
+        "Deterministic veto for every risk-increasing domain command",
+        "AI output, model confidence, UI state, and venue response cannot override it",
+        "Property tests cover all risk invariants",
+        "No risk-rejected command creates a live submission (verified by test)"
+      ],
+      "source": "docs/04, docs/25 \u00c2\u00a73.1",
+      "dependencies": [
+        "WI-110",
+        "WI-112"
+      ],
+      "write_scope": [
+        "components/risk-engine",
+        "services/control-plane"
+      ],
+      "evidence_ref": [
+        "EV-024"
+      ],
+      "completion_note": "All four acceptance criteria are enforced by named tests. The engine evaluates the fifteen docs/04 mandatory controls as a pure function of (Intent, Facts, Policy); the Advisory is accepted and never read; and a Permit is constructible only through GrantPermit from an unexpired approval bound to the exact command. Outstanding and not part of this item: the adapter from the signed configuration snapshot in services/control-plane/config to this package's Policy projection, and the OMS consuming the Permit type. Both are recorded as caveats on EV-024 rather than silently deferred."
+    },
+    {
+      "id": "WI-115",
+      "phase": 2,
+      "title": "OMS canonical order state machine",
+      "status": "COMPLETED",
+      "priority": "critical-path",
+      "acceptance_criteria": [
+        "OMS owns canonical internal order lifecycle state; adapters report observations only",
+        "Optimistic concurrency/version checks; last-write-wins prohibited",
+        "Every accepted order has exactly one canonical OMS identity",
+        "UNKNOWN submission outcome is never converted to rejection or fill by timeout assumption",
+        "Halt is monotonic: no lower-privilege action or recovery automation silently clears it"
+      ],
+      "source": "docs/04, docs/01 \u00c2\u00a78, docs/25 \u00c2\u00a73.2, \u00c2\u00a73.9",
+      "dependencies": [
+        "WI-114",
+        "WI-113"
+      ],
+      "write_scope": [
+        "components/oms",
+        "services/control-plane"
+      ],
+      "evidence_ref": [
+        "EV-025"
+      ]
+    },
+    {
+      "id": "WI-116",
+      "phase": 2,
+      "title": "Append-only Ledger with compensating corrections",
+      "status": "COMPLETED",
+      "acceptance_criteria": [
+        "Ledger records financial facts through append-only entries only",
+        "Corrections are compensating entries, never in-place mutation",
+        "Projections and caches are rebuildable and carry no financial authority",
+        "Positions reconcile to validated fills"
+      ],
+      "source": "docs/04, docs/05, docs/25 \u00c2\u00a73.4",
+      "dependencies": [
+        "WI-115"
+      ],
+      "write_scope": [
+        "services/control-plane",
+        "db/migrations"
+      ],
+      "evidence_ref": [
+        "EV-026"
+      ],
+      "completed_at": "2026-09-28T18:05:00Z"
+    },
+    {
+      "id": "WI-117",
+      "phase": 2,
+      "title": "Tamper-evident audit chain",
+      "status": "COMPLETED",
+      "acceptance_criteria": [
+        "Append-only hash-chained event chain with signed checkpoints",
+        "Independent immutable retention; integrity verifier implemented",
+        "Key rotation supported",
+        "Audit sink unavailability: bounded durable buffering; block sensitive operations before evidence can be lost; never silently drop audit events",
+        "Tamper, deletion, reorder, replay, and restore detection tests pass"
+      ],
+      "source": "docs/22, ADR-022",
+      "dependencies": [
+        "WI-110",
+        "WI-116"
+      ],
+      "write_scope": [
+        "services/control-plane",
+        "db/migrations"
+      ],
+      "evidence_ref": [
+        "EV-027"
+      ],
+      "completed_at": "2026-09-28T18:45:00Z"
+    },
+    {
+      "id": "WI-118",
+      "phase": 2,
+      "title": "G1 domain foundation gate report",
+      "status": "BLOCKED",
+      "acceptance_criteria": [
+        "Canonical IDs, timestamps, money/quantity types, errors, envelopes, idempotency, configuration boundaries, migrations, and domain tests implemented and verified",
+        "Gate report: reviewer, commit, timestamp, command output, binary PASS/FAIL, evidence digests",
+        "No partial completion; PASS only when every criterion holds"
+      ],
+      "gate": "G1",
+      "dependencies": [
+        "WI-111",
+        "WI-112",
+        "WI-113",
+        "WI-114",
+        "WI-115",
+        "WI-116",
+        "WI-117",
+        "WI-106"
+      ],
+      "evidence_ref": [
+        "EV-031",
+        "EV-033"
+      ],
+      "blocker": "Two of the six fields docs/11_EXECUTION_GATES.md requires in every gate report cannot be produced by an automated agent, and docs/11 forbids partial completion. (1) reviewer: a named human reviewer; an automated agent recording itself as the reviewer would satisfy the field and none of its purpose, and the same package already treats an unattested specification as not passed at G0.8. (2) commit: the repository has committed only the specification. HEAD is 15d978ff5658c0646a63ce5ecc74b998e8bc05a4 and its entire content is the 26 files under docs/ plus docs/MANIFEST.json, 27 tracked paths in total, of which zero are modified. All 236 implementation paths are untracked: services (66), contracts (31), components (28), scripts (23), apps (20), workers (19), .kilo (14), tests (8), db (7), adapters (3), infra (3), and the remaining top-level files. This corrects EV-031, which recorded the figure as 23 untracked-or-modified paths; the real figure is 236 untracked and 0 modified, and the earlier text understated the outstanding commit by an order of magnitude while implying tracked files were modified, which none are. The practical consequence is that the next commit is a first commit of the entire platform rather than a small follow-up, so a reviewer has no baseline diff and is reviewing 236 new files against nothing. A pre-commit safety scan of all 237 candidate paths found no credential-shaped literal, no private key, no real environment file, and no build artefact, so the tree is safe to commit; scripts/precommit_scan.py reruns that scan. No commit was requested or made. Both fields clear by human action: commit the tree, then have a named reviewer attest.",
+      "partial_results": "9 of 9 G1 mechanical criteria verified; 801 tests PASS across six Go modules; 4 of 4 criteria proven to fail when their control is removed. Gate verdict FAIL pending the reviewer and commit fields."
+    },
+    {
+      "id": "WI-120",
+      "phase": 3,
+      "title": "Transactional repositories via sqlc",
+      "status": "PENDING",
+      "acceptance_criteria": [
+        "Database transactions wrap every authoritative state transition",
+        "No direct table writes outside the owning module",
+        "Cross-module mutation only through explicit commands or transactional events"
+      ],
+      "source": "docs/05, docs/01 \u00c2\u00a77",
+      "dependencies": [
+        "WI-118"
+      ],
+      "write_scope": [
+        "services/control-plane",
+        "db/migrations"
+      ]
+    },
+    {
+      "id": "WI-121",
+      "phase": 3,
+      "title": "Transactional outbox",
+      "status": "PENDING",
+      "acceptance_criteria": [
+        "Events written in the same transaction as the state change",
+        "Delayed dispatch: no event loss, no duplicate domain transition; alert on lag; bounded backpressure",
+        "No exactly-once assumption; consumers remain idempotent"
+      ],
+      "source": "docs/05, ADR-006, ADR-020, docs/25 \u00c2\u00a76",
+      "dependencies": [
+        "WI-120"
+      ],
+      "write_scope": [
+        "services/control-plane",
+        "db/migrations"
+      ]
+    },
+    {
+      "id": "WI-122",
+      "phase": 3,
+      "title": "Outbox dispatcher",
+      "status": "PENDING",
+      "acceptance_criteria": [
+        "At-least-once delivery with idempotent consumers",
+        "Fan-out/lag threshold for NATS JetStream introduction is documented and observable"
+      ],
+      "dependencies": [
+        "WI-121"
+      ],
+      "write_scope": [
+        "services/control-plane"
+      ]
+    },
+    {
+      "id": "WI-123",
+      "phase": 3,
+      "title": "Database-enforced idempotency",
+      "status": "PENDING",
+      "acceptance_criteria": [
+        "Idempotency key scoped to actor, endpoint, environment",
+        "Replays return the original command result",
+        "Application memory never relied upon; uniqueness constraint is the enforcement point",
+        "Duplicate commands do not increase exposure (test)"
+      ],
+      "source": "docs/03",
+      "dependencies": [
+        "WI-120"
+      ],
+      "write_scope": [
+        "services/control-plane",
+        "db/migrations"
+      ]
+    },
+    {
+      "id": "WI-124",
+      "phase": 3,
+      "title": "Replay utilities",
+      "status": "PENDING",
+      "acceptance_criteria": [
+        "Deterministic replay of persisted event history",
+        "Replay produces identical state and does not duplicate domain transitions"
+      ],
+      "dependencies": [
+        "WI-121",
+        "WI-122"
+      ],
+      "write_scope": [
+        "services/control-plane",
+        "tests"
+      ]
+    },
+    {
+      "id": "WI-125",
+      "phase": 3,
+      "title": "Reconciliation case storage",
+      "status": "PENDING",
+      "acceptance_criteria": [
+        "Unknown submission outcomes persisted and surfaced as cases",
+        "Case lifecycle is auditable and versioned"
+      ],
+      "source": "docs/05, docs/04",
+      "dependencies": [
+        "WI-120"
+      ],
+      "write_scope": [
+        "services/control-plane",
+        "db/migrations"
+      ]
+    },
+    {
+      "id": "WI-130",
+      "phase": 4,
+      "title": "Market data normalization, freshness, provenance, replayable ingestion",
+      "status": "PENDING",
+      "gate": "G2",
+      "acceptance_criteria": [
+        "Normalized instruments, feed health, freshness controls, provenance, and replayable ingestion verified",
+        "Stale or contradictory data marks feed unhealthy and denies commands requiring it",
+        "Provenance retained and alerted"
+      ],
+      "source": "docs/16, docs/11 G2",
+      "dependencies": [
+        "WI-118",
+        "WI-120"
+      ],
+      "write_scope": [
+        "services/control-plane",
+        "adapters/venues"
+      ]
+    },
+    {
+      "id": "WI-131",
+      "phase": 4,
+      "title": "Simulated, paper, and shadow execution plus reconciliation engine",
+      "status": "PENDING",
+      "priority": "critical-path",
+      "gate": "G3",
+      "acceptance_criteria": [
+        "Risk gate, OMS state machine, order invariants, halt behavior, ledger, and reconciliation tests pass",
+        "Venue timeout persists unknown outcome and reconciles before any exposure-increasing retry",
+        "Shadow reconciliation and fault injection pass",
+        "Halt state blocks prohibited actions"
+      ],
+      "source": "docs/04, docs/05, docs/11 G3, G6",
+      "dependencies": [
+        "WI-130",
+        "WI-124",
+        "WI-125"
+      ],
+      "write_scope": [
+        "components/oms",
+        "components/reconciliation",
+        "adapters/venues",
+        "services/control-plane"
+      ]
+    },
+    {
+      "id": "WI-132",
+      "phase": 4,
+      "title": "Venue adapter interface and contract tests",
+      "status": "PENDING",
+      "gate": "G8",
+      "acceptance_criteria": [
+        "Adapter contract tests, precision rules, rate limits, timeout handling, reconciliation, venue-specific failure modes pass",
+        "Venue precision validated before submission",
+        "Adapters cannot modify policy, risk configuration, or ledger facts"
+      ],
+      "source": "docs/16, docs/15, docs/11 G8",
+      "dependencies": [
+        "WI-131"
+      ],
+      "write_scope": [
+        "adapters/venues"
+      ]
+    },
+    {
+      "id": "WI-140",
+      "phase": 5,
+      "title": "Dataset registry and deterministic backtest engine",
+      "status": "BLOCKED",
+      "gate": "G4",
+      "acceptance_criteria": [
+        "Datasets versioned; backtests deterministic; artifacts reproducible",
+        "No research worker holds financial authority, live credentials, or an authoritative write path",
+        "No lookahead bias in the backtest harness"
+      ],
+      "source": "docs/07, docs/11 G4, docs/02",
+      "dependencies": [
+        "WI-105",
+        "WI-104"
+      ],
+      "write_scope": [
+        "workers/research",
+        "workers/backtest"
+      ],
+      "evidence_ref": [
+        "EV-032",
+        "EV-033",
+        "EV-034",
+        "EV-035",
+        "EV-036"
+      ],
+      "blocker": "The two G4 report fields that docs/11_EXECUTION_GATES.md requires and that an automated agent cannot honestly produce are outstanding. (1) reviewer: a named human reviewer. An agent recording itself as the reviewer would satisfy the field and none of its purpose, and the same package already treats an unattested specification as not passed at G0.8. (2) commit: HEAD is 15d978ff5658c0646a63ce5ecc74b998e8bc05a4 and its entire content is the 27 specification paths under docs/; all 236 implementation paths are untracked, including the whole workers/ tree, so no commit contains the work being certified. The next commit is a first commit of the platform rather than a follow-up, so no baseline diff exists for a reviewer; see EV-033 for the full census and a pre-commit safety scan. No commit was requested or made. Both clear by human action: commit the working tree, then have a named reviewer attest.",
+      "partial_results": "3 of 3 acceptance criteria verified; every injected defect detected and every file restored byte-for-byte; 64 research, 47 backtest (8 property-based) and 115 CI tests PASS; ruff and mypy strict clean on both workers; all 12 release gates PASS. Both workers are covered by CI, the gate script, and the dependency and licence scans, and that coverage is now an enforced invariant rather than a convention. Gate verdict FAIL pending the reviewer and commit fields."
+    },
+    {
+      "id": "WI-141",
+      "phase": 5,
+      "title": "Model registry, evaluation, tool allowlists, decision ledger",
+      "status": "IN_PROGRESS",
+      "gate": "G5",
+      "acceptance_criteria": [
+        "Identity, model registry, decision ledger, tool permissions, and governance workflows operate with complete audit trails",
+        "No model may authorize its own execution",
+        "Tool permission-denial, model rollback, and lineage tests pass",
+        "Compromised research worker: workload identity revoked, artifacts quarantined, promotion blocked, forensic evidence preserved"
+      ],
+      "source": "docs/07, docs/11 G5, docs/25 \u00c2\u00a75, \u00c2\u00a76",
+      "dependencies": [
+        "WI-140",
+        "WI-111",
+        "WI-117"
+      ],
+      "write_scope": [
+        "workers/research",
+        "services/control-plane"
+      ],
+      "plan": {
+        "components": [
+          "model registry record + lifecycle state machine (Go, authoritative)",
+          "separation of duties: no model may authorize its own execution",
+          "tool permission allowlist: read-only / state-changing / financial",
+          "decision ledger: prompt, tool call, retrieved context, lineage",
+          "compromised-worker response: revoke, quarantine, block, preserve",
+          "drift and degradation monitoring with automatic pause",
+          "research worker: lineage proposal with no financial authority"
+        ],
+        "boundary": "Go owns authoritative model/tool/decision state. The research worker proposes only, and its write path to any authoritative table is denied.",
+        "verification": "Gates for the four AC: no self-authorization (AC2), tool permission-denial + model rollback + lineage tests (AC3), compromised-worker response (AC4), audit trail completeness (AC1)."
+      },
+      "partial_results": "AC1 registry/audit/idempotency verified: journal.go is the registry's only write path and writes the lifecycle state only after the audit chain accepts the record describing it. AC2 no model authorizes its own execution verified. AC3 tool permission-denial, model rollback, and lineage verified. AC4 all four compromise actions verified, with containment widening from the detected workload to every workload serving the same exact model version, and the reported blast radius derived from the revocations recorded rather than from the live set so it is stable across retries. Identity: short-lived workload identity bound to one exact model version, with immediate idempotent revocation that carries reason and evidence into the refusal and blocks re-minting. Persistence: 0004_model_registry.sql adds a durable registry, workload identity, revocation, and idempotency store whose constraints are proven against a real PostgreSQL 17 with 45 assertions, plus 19 sqlc queries that preserve the audit-causation and blast-radius-from-recorded-revocations properties in SQL. 122 model tests race-clean, 109 research tests, 32 of 32 mutations detected with byte-for-byte restore, all 13 gates PASS. Defects found and fixed: registration was outside the declared transition set; VerifyDeclaration's rules were structurally untestable so its empty-source guard could be deleted with the suite green; the quarantine-exit check was narrower than the comment stating it; the reported containment population was a function of when the record was written rather than of what had happened; Contain accepted a caller boolean asserting revocation had happened; the mutation harness applied mutations cumulatively and could not attribute its own verdicts; a verification script reported ALL 0 ASSERTIONS PASSED while asserting nothing, because one unhandled error rolled back the transaction and the summary counted an empty table - the harness now treats a zero total as a hard failure; the 0004 migration was missing its migrate:down marker and its COMMIT, so the harness applied up then down and the up body rolled back; and the idempotency trigger guarded UPDATE but not DELETE, making a prunable ledger that would let a retried request transition twice. REMAINING: the schema and the generated queries are proven but the Go journal still holds its registries in memory and does not call them, so a restart still loses the Go-side state and no integration test runs the journal against a real database - the two layers have been verified separately and never together; a workload whose identity was issued by a process that has since restarted is invisible to the widening lookup; containment quarantines only the artifacts named in the declaration, not every artifact of the affected version; Contain does not itself perform the model's lifecycle quarantine, so the four actions are each verified but their atomicity is neither verified nor implemented; ContainedModelVersions does not say whether a version's artifacts are quarantined; Authenticate performs no cryptographic verification; workload_revocations.evidence_ref is a free-text reference rather than a foreign key to a forensic store, so the linkage is recorded but not enforced; and the idempotency ledger has no expiry, which is correct for an append-only ledger and a real capacity concern. pgx is unusable and re-confirmed so: every release from v5.0.0 to v5.11.0 requires an untagged pgservicefile that has no tagged release at all. Gate verdict FAIL; work item remains IN_PROGRESS.",
+      "evidence_ref": [
+        "EV-037",
+        "EV-038",
+        "EV-039",
+        "EV-040",
+        "EV-041"
+      ]
+    },
+    {
+      "id": "WI-142",
+      "phase": 5,
+      "title": "Promotion workflow",
+      "status": "PENDING",
+      "acceptance_criteria": [
+        "No autonomous authority escalation",
+        "Promotion is a reviewed, audited, reversible operation"
+      ],
+      "dependencies": [
+        "WI-141"
+      ],
+      "write_scope": [
+        "services/control-plane",
+        "workers/research"
+      ]
+    },
+    {
+      "id": "WI-150",
+      "phase": 6,
+      "title": "Operator web control plane",
+      "status": "PENDING",
+      "acceptance_criteria": [
+        "UI cannot bypass server controls",
+        "All money values rendered from canonical decimal strings",
+        "No direct database access, no broker credentials, no order submission outside the Go API",
+        "Keyboard navigable, accessible semantics, contrast compliant; locale formatting never alters canonical values"
+      ],
+      "source": "docs/02, docs/11 G7, docs/25 \u00c2\u00a75",
+      "dependencies": [
+        "WI-118",
+        "WI-115",
+        "WI-116"
+      ],
+      "write_scope": [
+        "apps/web"
+      ]
+    },
+    {
+      "id": "WI-151",
+      "phase": 6,
+      "title": "Audit views, risk dashboards, operational controls",
+      "status": "PENDING",
+      "acceptance_criteria": [
+        "Privileged actions are audited",
+        "Global and scoped halt controls exposed with explicit re-enable approval",
+        "Halt precedence is visible to the operator"
+      ],
+      "source": "docs/11 G7, docs/25 \u00c2\u00a75",
+      "dependencies": [
+        "WI-150",
+        "WI-117"
+      ],
+      "write_scope": [
+        "apps/web"
+      ]
+    },
+    {
+      "id": "WI-152",
+      "phase": 6,
+      "title": "Telegram secondary interface on the identical authorization path",
+      "status": "PENDING",
+      "gate": "G7",
+      "acceptance_criteria": [
+        "Web and Telegram actions use the same server-side identity, authorization, approval, and audit path",
+        "No additional authority granted to the messaging surface"
+      ],
+      "source": "docs/11 G7, docs/15",
+      "dependencies": [
+        "WI-150",
+        "WI-111"
+      ],
+      "write_scope": [
+        "services/control-plane",
+        "apps/web"
+      ]
+    },
+    {
+      "id": "WI-160",
+      "phase": 7,
+      "title": "Security testing and secrets isolation",
+      "status": "PENDING",
+      "gate": "G9",
+      "acceptance_criteria": [
+        "Security scans pass; secrets isolated from the repository and image layers",
+        "Access review, incident drills, and audit integrity verification complete",
+        "No unresolved release-blocking finding or expired exception"
+      ],
+      "source": "docs/06, docs/11 G9, docs/22",
+      "dependencies": [
+        "WI-118",
+        "WI-117"
+      ],
+      "write_scope": [
+        "tests",
+        "ops/runbooks",
+        ".github/workflows"
+      ]
+    },
+    {
+      "id": "WI-161",
+      "phase": 7,
+      "title": "Performance and capacity verification",
+      "status": "PENDING",
+      "acceptance_criteria": [
+        "Baseline and burst tests pass with queue recovery, database headroom, bounded concurrency",
+        "Saturation behavior sheds non-authoritative workloads first while preserving risk, OMS, ledger, audit, and halt capability"
+      ],
+      "source": "docs/08, docs/19, docs/25 \u00c2\u00a76",
+      "dependencies": [
+        "WI-131"
+      ],
+      "write_scope": [
+        "tests",
+        "ops/runbooks"
+      ]
+    },
+    {
+      "id": "WI-162",
+      "phase": 7,
+      "title": "Backup restore and disaster recovery drill",
+      "status": "PENDING",
+      "acceptance_criteria": [
+        "Witnessed restore drill with approved RTO/RPO; targets remain unclaimed until demonstrated",
+        "Region failover enters RECOVERY_HOLD; no automatic resumption of risk-increasing activity",
+        "Ledger, OMS, outbox, audit checkpoints, and reconciliation verified before controlled resume"
+      ],
+      "source": "docs/10, ADR-021, ADR-025",
+      "dependencies": [
+        "WI-120",
+        "WI-117"
+      ],
+      "write_scope": [
+        "ops/runbooks",
+        "infra/terraform",
+        "tests"
+      ]
+    },
+    {
+      "id": "WI-163",
+      "phase": 7,
+      "title": "Observability validation",
+      "status": "PENDING",
+      "acceptance_criteria": [
+        "Correlated traces, metrics, structured logs with alert ownership, SLO/error budget, audit-safe redaction",
+        "Alert simulation, dashboard review, sensitive-data scan pass",
+        "Telemetry outage does not disable preservation of mandatory security and financial evidence"
+      ],
+      "source": "docs/08, docs/01 \u00c2\u00a710, docs/25 \u00c2\u00a75",
+      "dependencies": [
+        "WI-160"
+      ],
+      "write_scope": [
+        "infra",
+        "ops/runbooks",
+        "services/control-plane"
+      ]
+    },
+    {
+      "id": "WI-164",
+      "phase": 7,
+      "title": "Deployment rehearsal and rollback verification",
+      "status": "PENDING",
+      "acceptance_criteria": [
+        "Rollback restores the previous artifact and configuration snapshot",
+        "Migrations remain backward-compatible with the immediately previous release",
+        "Canary boundaries and abort criteria recorded"
+      ],
+      "source": "docs/09, docs/19",
+      "dependencies": [
+        "WI-160",
+        "WI-161",
+        "WI-162"
+      ],
+      "write_scope": [
+        "infra/terraform",
+        "ops/runbooks",
+        ".github/workflows"
+      ]
+    },
+    {
+      "id": "WI-165",
+      "phase": 7,
+      "title": "G10 production readiness and release evidence package",
+      "status": "PENDING",
+      "gate": "G10",
+      "acceptance_criteria": [
+        "All prior gates pass",
+        "Release evidence contains all 10 required elements of docs/25 \u00c2\u00a78",
+        "Capacity targets pass; rollback verified; operational ownership assigned for every service",
+        "Missing, stale, unverifiable, or contradictory evidence is a release failure"
+      ],
+      "source": "docs/25 \u00c2\u00a78, docs/11 G10, docs/24",
+      "dependencies": [
+        "WI-160",
+        "WI-161",
+        "WI-162",
+        "WI-163",
+        "WI-164",
+        "WI-150",
+        "WI-152",
+        "WI-141",
+        "WI-132"
+      ]
+    },
+    {
+      "id": "WI-170",
+      "phase": 8,
+      "title": "G11 live activation",
+      "status": "BLOCKED_OUT_OF_SCOPE",
+      "acceptance_criteria": [
+        "G10 passed",
+        "Adult account-holder authority verified; exact jurisdiction/account/venue/product/instrument/activity tuple has current approved eligibility evidence",
+        "Live credentials provisioned only in isolated live infrastructure with withdrawal/transfer disabled",
+        "No material reconciliation break, stale market data, unresolved UNKNOWN order, or active halt",
+        "Two distinct authorized approvers; owner authorization recorded against exact configuration/artifact digests",
+        "Canary activation in the narrowest permitted scope; abort thresholds and responsible operator confirmed; activation evidence immutable"
+      ],
+      "gate": "G11",
+      "blocked_reason": "Requires external legal/venue eligibility evidence, real credentials, and two distinct human approvers. Not an engineering deliverable. Live capability remains deny-by-default.",
+      "dependencies": [
+        "WI-165"
+      ]
+    }
+  ]
+}
