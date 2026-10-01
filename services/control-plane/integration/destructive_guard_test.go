@@ -286,3 +286,49 @@ func TestTheConfiguredDatabaseSatisfiesTheDestructiveGuard(t *testing.T) {
 	t.Logf("destructive guard verdict for the configured target %s: allowed (overridden=%v)",
 		verdict.target, verdict.overridden)
 }
+
+// lib/pq applies the path first and then every query parameter, last write winning. That makes
+// the path-only parse a bypass rather than a simplification: these DSNs all name a disposable,
+// local database in the part of the string the guard used to read, and all of them connect
+// somewhere else. A guard that is wrong about which database it is protecting is worse than no
+// guard, because it reports that it protected one.
+func TestAQueryStringThatRedirectsTheConnectionIsRefused(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		dsn  string
+	}{
+		{
+			name: "dbname overrides the path to a database that does not announce itself disposable",
+			dsn:  "postgres://webtrade:webtrade@localhost:5432/webtrade_test?dbname=webtrade&sslmode=disable",
+		},
+		{
+			name: "host overrides the path to a remote host the guard read as local",
+			dsn:  "postgres://webtrade:webtrade@localhost:5432/webtrade_test?host=db.internal&sslmode=disable",
+		},
+		{
+			name: "port overrides the path",
+			dsn:  "postgres://webtrade:webtrade@localhost:5432/webtrade_test?port=6543&sslmode=disable",
+		},
+		{
+			name: "user overrides the path",
+			dsn:  "postgres://webtrade:webtrade@localhost:5432/webtrade_test?user=postgres&sslmode=disable",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := parseDSNTarget(tc.dsn); err == nil {
+				t.Fatalf("parseDSNTarget accepted a DSN whose query string redirects the "+
+					"connection; the guard would then judge a database the driver never opens.\n"+
+					"  dsn: %s", tc.dsn)
+			}
+		})
+	}
+}
+
+// sslmode and the other connection parameters that cannot move the connection must not be
+// mistaken for one that can, or the guard becomes unusable and gets disabled.
+func TestAParameterThatCannotRedirectTheConnectionIsAccepted(t *testing.T) {
+	dsn := "postgres://webtrade:webtrade@localhost:5432/webtrade_test?dbname=webtrade_test&sslmode=disable"
+	if _, err := parseDSNTarget(dsn); err != nil {
+		t.Fatalf("parseDSNTarget refused a DSN whose only dbname restates the path: %v", err)
+	}
+}

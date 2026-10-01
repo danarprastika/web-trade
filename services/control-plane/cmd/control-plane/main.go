@@ -19,6 +19,10 @@
 //     process exits non-zero and serves nothing, because a control plane that came up with an
 //     empty registry would report already-registered models as unknown and invite the caller to
 //     register them again.
+//     The audit sink is constructed here with a checkpoint signer rather than left to default,
+//     because the signer is what writes audit_checkpoints, and that table is what a later
+//     rehydration compares each partition's head against. Neither this process nor bootstrap
+//     will build without one.
 //  4. Serves liveness and readiness over HTTP until interrupted, then shuts down gracefully.
 //
 // What this command deliberately does not do is expose the write path over HTTP. The model
@@ -39,6 +43,7 @@
 //	CONTROL_PLANE_ADDR              listen address; default :8080
 //	CONTROL_PLANE_GUARD_LIMIT       bounded audit backlog; default 1000
 //	CONTROL_PLANE_PARTITIONS        comma-separated audit partitions to rehydrate; default none
+//	CONTROL_PLANE_CHECKPOINT_KEY_ID names the key that signs audit checkpoints; default control-plane-local
 //	CONTROL_PLANE_STARTUP_TIMEOUT   how long startup may take; default 30s
 //	CONTROL_PLANE_SHUTDOWN_TIMEOUT  how long graceful shutdown may take; default 10s
 //
@@ -190,9 +195,21 @@ type config struct {
 	addr            string
 	guardLimit      int
 	partitions      []string
+	checkpointKeyID string
 	startupTimeout  time.Duration
 	shutdownTimeout time.Duration
 }
+
+// defaultCheckpointKeyID names the checkpoint signing key when an operator has not chosen one.
+//
+// Defaulted rather than refused, and the reasoning is worth stating because every other
+// required value here is refused. The database URL and the environment are guesses about
+// facts only the operator has, and a wrong guess writes records in the wrong place. The key id
+// is a label: it names the key that signs audit checkpoints so a later reader knows what to
+// verify against, and an unnamed key is not an unsafe key - it is an unreadable one. The
+// operator who runs more than one control plane against one database sets it so the
+// checkpoints from each process are distinguishable, and that is the whole of the choice.
+const defaultCheckpointKeyID = "control-plane-local"
 
 // configFromEnv reads and validates the startup configuration.
 //
@@ -205,12 +222,16 @@ func configFromEnv() (config, error) {
 		databaseURL:     strings.TrimSpace(os.Getenv("DATABASE_URL")),
 		environment:     strings.TrimSpace(os.Getenv("CONTROL_PLANE_ENVIRONMENT")),
 		addr:            strings.TrimSpace(os.Getenv("CONTROL_PLANE_ADDR")),
+		checkpointKeyID: defaultCheckpointKeyID,
 		guardLimit:      1000,
 		startupTimeout:  30 * time.Second,
 		shutdownTimeout: 10 * time.Second,
 	}
 	if cfg.addr == "" {
 		cfg.addr = ":8080"
+	}
+	if raw := strings.TrimSpace(os.Getenv("CONTROL_PLANE_CHECKPOINT_KEY_ID")); raw != "" {
+		cfg.checkpointKeyID = raw
 	}
 
 	if cfg.databaseURL == "" {
@@ -277,7 +298,27 @@ func durationEnv(name string, fallback time.Duration) (time.Duration, error) {
 // This is the wiring the gate asks about: every port is satisfied by a PostgreSQL
 // implementation, and bootstrap.Build performs the rebuild from persisted state.
 func buildStack(ctx context.Context, db *sql.DB, cfg config) (*bootstrap.Stack, error) {
-	sink, err := audit.NewSQLSink(db)
+	// The checkpoint signer closes every exported batch of audit records, and neither the sink
+	// nor bootstrap will be built without one. A deployment that could store evidence without
+	// anything saying how far it reaches could have its tail deleted and rehydrate as verified,
+	// which is why this is a required construction step rather than an optional hardening.
+	//
+	// The key is generated in process and does not survive it. That is a real limitation and
+	// it is stated here rather than left to be discovered: docs/22 section 3 requires a managed
+	// KMS or HSM key in production, and no such client exists in this repository yet. Nothing
+	// downstream is affected by it - the anchored restore compares the checkpoint's sequence
+	// and hash and leaves authenticity to the Verifier's key ring - and the key id is recorded
+	// on every checkpoint, so substituting a KMS-backed signer later needs no schema change.
+	signer, err := audit.NewLocalSigner(cfg.checkpointKeyID)
+	if err != nil {
+		return nil, fmt.Errorf("building the audit checkpoint signer: %w", err)
+	}
+	anchor, err := audit.NewAnchor(signer, time.Now)
+	if err != nil {
+		return nil, fmt.Errorf("building the audit checkpoint anchor: %w", err)
+	}
+
+	sink, err := audit.NewSQLSink(db, anchor)
 	if err != nil {
 		return nil, fmt.Errorf("building the audit sink: %w", err)
 	}
@@ -303,16 +344,17 @@ func buildStack(ctx context.Context, db *sql.DB, cfg config) (*bootstrap.Stack, 
 	}
 
 	return bootstrap.Build(ctx, bootstrap.Deps{
-		Clock:       time.Now,
-		Environment: cfg.environment,
-		GuardLimit:  cfg.guardLimit,
-		Partitions:  cfg.partitions,
-		Sink:        sink,
-		ChainReader: chainReader,
-		Store:       store,
-		Snapshot:    snapshot,
-		Identity:    identity,
-		Identities:  identityReader,
+		Clock:            time.Now,
+		Environment:      cfg.environment,
+		GuardLimit:       cfg.guardLimit,
+		Partitions:       cfg.partitions,
+		Sink:             sink,
+		CheckpointSigner: signer,
+		ChainReader:      chainReader,
+		Store:            store,
+		Snapshot:         snapshot,
+		Identity:         identity,
+		Identities:       identityReader,
 	})
 }
 

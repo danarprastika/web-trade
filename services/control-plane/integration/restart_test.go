@@ -26,7 +26,8 @@ import (
 func buildStack(t *testing.T, ctx context.Context, db *sql.DB, partition string, at time.Time) *bootstrap.Stack {
 	t.Helper()
 
-	sink, err := audit.NewSQLSink(db)
+	signer, anchor := liveSigning(t)
+	sink, err := audit.NewSQLSink(db, anchor)
 	if err != nil {
 		t.Fatalf("building the SQL sink: %v", err)
 	}
@@ -52,16 +53,17 @@ func buildStack(t *testing.T, ctx context.Context, db *sql.DB, partition string,
 	}
 
 	stack, err := bootstrap.Build(ctx, bootstrap.Deps{
-		Clock:       func() time.Time { return at },
-		Environment: "SIMULATION",
-		GuardLimit:  1000,
-		Partitions:  []string{partition},
-		Sink:        sink,
-		ChainReader: chainReader,
-		Store:       store,
-		Snapshot:    snapshot,
-		Identity:    identity,
-		Identities:  identityReader,
+		Clock:            func() time.Time { return at },
+		Environment:      "SIMULATION",
+		GuardLimit:       1000,
+		Partitions:       []string{partition},
+		Sink:             sink,
+		CheckpointSigner: signer,
+		ChainReader:      chainReader,
+		Store:            store,
+		Snapshot:         snapshot,
+		Identity:         identity,
+		Identities:       identityReader,
 	})
 	if err != nil {
 		t.Fatalf("building the stack: %v", err)

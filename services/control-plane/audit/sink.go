@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
+	"time"
 
 	"github.com/danarprastika/web-trade/services/control-plane/db/dbgen"
 )
@@ -35,11 +37,61 @@ type Sink interface {
 // SQLSinkQuerier is the subset of the generated accessors this sink uses.
 //
 // It is narrow for the same reason the model package's ports are: a sink that can reach
-// every generated query can be handed a write the 0002 guards do not cover. Note that only
-// AppendAuditRecord is reachable here - there is no update, no delete, and no upsert,
-// because a sink that could modify or remove evidence would not be a sink.
+// every generated query can be handed a write the 0002 guards do not cover. Both reachable
+// writes are appends into the two audit tables, and nothing else is: there is no update, no
+// delete, and no upsert, because a sink that could modify or remove evidence would not be a
+// sink.
+//
+// AppendAuditCheckpoint is here because the anchor is the sink's product too. The reader
+// side of this package treats a partition's latest checkpoint as the only durable statement
+// of how far that partition went - it is what makes a deleted tail detectable rather than
+// merely internal consistency - and a consumer with no producer is a check that can never
+// fire. Every test of that check inserted its own checkpoint, so the absence of a producer
+// was invisible until a live database was involved.
 type SQLSinkQuerier interface {
 	AppendAuditRecord(ctx context.Context, arg dbgen.AppendAuditRecordParams) (dbgen.AuditRecord, error)
+	AppendAuditCheckpoint(ctx context.Context, arg dbgen.AppendAuditCheckpointParams) (dbgen.AuditCheckpoint, error)
+}
+
+// Anchor is what seals a durable export: the signer that vouches for the batch and the clock
+// that dates the vouching.
+//
+// It is a type rather than two constructor parameters because a sink needs both together.
+// NewCheckpoint refuses a nil signer, and created_at is part of the signed payload, so
+// neither can be defaulted by omission. Bundling them means one requirement with one name
+// instead of two arguments that can each be forgotten, and the refusal can say what is
+// missing instead of which argument was nil.
+type Anchor struct {
+	signer Signer
+	clock  func() time.Time
+}
+
+// NewAnchor returns the signer-and-clock pair a sink closes each export with.
+func NewAnchor(signer Signer, clock func() time.Time) (*Anchor, error) {
+	if signer == nil {
+		// Refused rather than defaulted. A sink with no signer could only store records, and
+		// an archive nothing has vouched for is indistinguishable from an archive whose tail
+		// was deleted - which is the failure the checkpoint exists to detect.
+		return nil, errors.New("a sql-backed audit sink requires a checkpoint signer; without " +
+			"one the export would commit records that nothing says how far they reach, and a " +
+			"truncated archive would restore as verified")
+	}
+	if clock == nil {
+		return nil, errors.New("a sql-backed audit sink requires a clock; a checkpoint's " +
+			"created_at is part of its signed payload and cannot be defaulted by omission")
+	}
+	return &Anchor{signer: signer, clock: clock}, nil
+}
+
+// Signer returns the signer this anchor closes checkpoints with.
+//
+// It is here for a caller that also builds a verification ring: the ring needs the signer's
+// public key, and the anchor is the one value the sink was given.
+func (a *Anchor) Signer() Signer { return a.signer }
+
+// seal signs a checkpoint over one partition's contiguous range.
+func (a *Anchor) seal(records []Record) (Checkpoint, error) {
+	return NewCheckpoint(records, a.signer, TimestampFrom(a.clock()))
 }
 
 // SQLSink is a Sink backed by the generated accessors over PostgreSQL.
@@ -56,18 +108,29 @@ type SQLSink struct {
 	begin func(ctx context.Context, fn func(SQLSinkQuerier) error) error
 	// close releases the caller's pool. It is nil when the sink did not create one.
 	close func() error
+	// anchor signs the checkpoint each committed export closes with. It is never nil: a sink
+	// that could not vouch for its own batch would be constructed only to reintroduce the
+	// unanchored archive this now refuses.
+	anchor *Anchor
 }
 
-// NewSQLSink returns a SQLSink that writes each batch in its own transaction.
-func NewSQLSink(db *sql.DB) (*SQLSink, error) {
+// NewSQLSink returns a SQLSink that writes each batch, and the checkpoint covering it, in one
+// transaction of its own.
+func NewSQLSink(db *sql.DB, anchor *Anchor) (*SQLSink, error) {
 	if db == nil {
 		return nil, errors.New("a sql-backed audit sink requires a database handle; " +
 			"constructing one here would hide the pool from the caller's shutdown sequence")
 	}
+	if anchor == nil {
+		return nil, errors.New("a sql-backed audit sink requires an anchor; a sink that " +
+			"cannot sign a checkpoint over what it stores would commit unanchored evidence, " +
+			"and a truncated archive would then restore as verified")
+	}
 	return &SQLSink{
-		q:     dbgen.New(db),
-		close: db.Close,
-		begin: sinkBeginTx[SQLSinkQuerier](db, func(tx *sql.Tx) SQLSinkQuerier { return dbgen.New(tx) }),
+		q:      dbgen.New(db),
+		close:  db.Close,
+		anchor: anchor,
+		begin:  sinkBeginTx[SQLSinkQuerier](db, func(tx *sql.Tx) SQLSinkQuerier { return dbgen.New(tx) }),
 	}, nil
 }
 
@@ -76,14 +139,20 @@ func NewSQLSink(db *sql.DB) (*SQLSink, error) {
 // The caller commits, not this sink. It is named separately from NewSQLSink because the
 // difference is who owns the commit, and a mistake there means a sink that reports success
 // for records a later rollback erased.
-func NewSQLSinkInTx(q SQLSinkQuerier) (*SQLSink, error) {
+func NewSQLSinkInTx(q SQLSinkQuerier, anchor *Anchor) (*SQLSink, error) {
 	if q == nil {
 		return nil, errors.New("a sql-backed audit sink requires a querier")
 	}
+	if anchor == nil {
+		return nil, errors.New("a sql-backed audit sink requires an anchor; a sink that " +
+			"cannot sign a checkpoint over what it stores would commit unanchored evidence, " +
+			"and a truncated archive would then restore as verified")
+	}
 	return &SQLSink{
-		q:     q,
-		close: func() error { return nil },
-		begin: func(_ context.Context, fn func(SQLSinkQuerier) error) error { return fn(q) },
+		q:      q,
+		close:  func() error { return nil },
+		anchor: anchor,
+		begin:  func(_ context.Context, fn func(SQLSinkQuerier) error) error { return fn(q) },
 	}, nil
 }
 
@@ -116,15 +185,37 @@ func sinkBeginTx[Q any](
 	}
 }
 
-// Export writes the batch in one transaction, in the order given.
+// Export writes the batch in one transaction, in the order given, and closes it with one signed
+// checkpoint per partition the batch touched.
 //
 // Order is the caller's business, not this sink's: the records arrive from a chain that
 // already numbered them, and re-sorting here would mean the durable order and the chain
 // order could disagree, which is the one comparison the integrity verifier exists to make.
+//
+// The checkpoint is written in the same transaction as the records, and this is the property
+// the whole change exists for. A checkpoint committed separately is the same class of bug as
+// no checkpoint at all: a crash between the two commits either leaves an anchor vouching for
+// records that were never written - so the restore refuses an archive that is perfectly
+// intact - or leaves records with no anchor, which is precisely the hole being closed. One
+// transaction removes the window, and a failure anywhere in it discards both halves.
+//
+// Anything that prevents the anchor is reported as a failure of the whole export. Returning
+// nil for records whose checkpoint could not be stored would release the guard's backlog for
+// evidence nothing has promised anything about, which is the unanchored state this refuses.
 func (s *SQLSink) Export(ctx context.Context, records []Record) error {
 	if len(records) == 0 {
 		return nil
 	}
+
+	// Signed before the transaction opens, so a batch that cannot be anchored - a partition
+	// with a hole in it, or a signer that will not sign - is refused without writing a single
+	// record. The parameters are then inserted inside the transaction with the records, which
+	// is where the atomicity actually has to hold.
+	anchors, err := s.checkpoints(records)
+	if err != nil {
+		return err
+	}
+
 	return s.begin(ctx, func(q SQLSinkQuerier) error {
 		for _, r := range records {
 			if _, err := q.AppendAuditRecord(ctx, paramsFor(r)); err != nil {
@@ -132,8 +223,77 @@ func (s *SQLSink) Export(ctx context.Context, records []Record) error {
 					r.AuditID, r.Partition, r.Sequence, err)
 			}
 		}
+		for _, anchor := range anchors {
+			if _, err := q.AppendAuditCheckpoint(ctx, anchor); err != nil {
+				return fmt.Errorf("recording the audit checkpoint for partition %s "+
+					"(sequences %d..%d): %w",
+					anchor.Partition, anchor.FirstSequence, anchor.LastSequence, err)
+			}
+		}
 		return nil
 	})
+}
+
+// checkpoints builds one signed checkpoint per partition present in records.
+//
+// Grouping is by partition because a partition is what a checkpoint covers: NewCheckpoint
+// refuses a batch spanning two partitions, and "this partition reached sequence N with this
+// hash" is the statement the restore needs to hear. One checkpoint per partition per export,
+// never one per record - an anchor's job is to close a range, and a row per record would be
+// one row per record saying the same thing with only the last one carrying the weight.
+//
+// The checkpoint covers the range this export appended, not the partition's whole history.
+// GetLatestAuditCheckpoint orders by last_sequence DESC, so the newest row is the one that
+// describes how far the partition actually went; emitting a fresh one per export keeps that
+// row advancing with the records instead of restating an older boundary. Successive exports of
+// one partition therefore produce adjacent, non-overlapping ranges, which is what the
+// table's uniqueness on (partition, last_sequence) and its deferred coverage check expect.
+//
+// Partitions are visited in sorted order so that a batch which cannot be anchored fails
+// naming the same partition on every run rather than whichever the map happened to yield.
+func (s *SQLSink) checkpoints(records []Record) ([]dbgen.AppendAuditCheckpointParams, error) {
+	byPartition := make(map[string][]Record, len(records))
+	for _, r := range records {
+		byPartition[r.Partition] = append(byPartition[r.Partition], r)
+	}
+	partitions := make([]string, 0, len(byPartition))
+	for partition := range byPartition {
+		partitions = append(partitions, partition)
+	}
+	sort.Strings(partitions)
+
+	out := make([]dbgen.AppendAuditCheckpointParams, 0, len(partitions))
+	for _, partition := range partitions {
+		cp, err := s.anchor.seal(byPartition[partition])
+		if err != nil {
+			return nil, fmt.Errorf("sealing the audit checkpoint for partition %s: %w", partition, err)
+		}
+		out = append(out, checkpointParams(cp))
+	}
+	return out, nil
+}
+
+// checkpointParams maps a signed checkpoint onto the generated insert's parameters.
+//
+// Written out field by field for the reason paramsFor is: the mapping is the contract between
+// what was signed and what is stored, and a column that is quietly omitted is a column the
+// restore cannot compare against.
+func checkpointParams(cp Checkpoint) dbgen.AppendAuditCheckpointParams {
+	return dbgen.AppendAuditCheckpointParams{
+		Partition:     cp.Partition,
+		FirstSequence: cp.FirstSequence,
+		LastSequence:  cp.LastSequence,
+		// Copied, not aliased, for the reason the record hashes are: these arrays belong to
+		// the checkpoint and a slice sharing their backing store could be rewritten under the
+		// driver.
+		FirstHash:     append([]byte(nil), cp.FirstHash[:]...),
+		LastHash:      append([]byte(nil), cp.LastHash[:]...),
+		RecordCount:   int32(cp.Count),
+		CreatedAtUtc:  cp.CreatedAt.Time(),
+		SigningKeyID:  cp.SigningKeyID,
+		Signature:     append([]byte(nil), cp.Signature...),
+		SchemaVersion: int32(CheckpointSchemaVersion),
+	}
 }
 
 // paramsFor maps a record onto the generated insert's parameters.

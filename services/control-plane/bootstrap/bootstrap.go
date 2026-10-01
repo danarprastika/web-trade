@@ -60,6 +60,23 @@ type Deps struct {
 	// Sink persists accepted audit records.
 	Sink audit.Sink
 
+	// CheckpointSigner signs the checkpoint that closes each exported batch of audit records.
+	//
+	// Required, and required for the same reason the clock and the environment are. Those two
+	// describe facts about the deployment; this is a third, and a deployment with none cannot
+	// produce the anchor that makes a truncated archive detectable. Without it the audit trail
+	// stays internally consistent, hashes correctly, and can still have had its tail deleted -
+	// which is the state the anchored restore exists to refuse.
+	//
+	// It is not handed to the sink, because the caller built the sink and built it with this
+	// signer; repeating the wiring here would only be a second chance to disagree with itself.
+	// The requirement is restated anyway because Build is where a deployment declares what it
+	// is composed of, and a stack assembled without a signer is one whose evidence nothing
+	// vouches for. So the refusal exists at both layers: audit refuses to build a sink that
+	// cannot anchor, and this refuses to assemble a deployment that has no signer to build it
+	// with.
+	CheckpointSigner audit.Signer
+
 	// ChainReader reads stored audit records back for rehydration.
 	ChainReader audit.ChainReader
 
@@ -175,8 +192,10 @@ func Build(ctx context.Context, d Deps) (*Stack, error) {
 //
 // Every field is checked rather than defaulted, because a default here does not degrade
 // quietly: a nil clock produces audit records with the wrong timestamps, a blank environment
-// produces records the chain rejects outright, and a non-positive guard limit produces a
-// backlog with no bound. Partitions are the one exception - an unwritten deployment genuinely
+// produces records the chain rejects outright, a non-positive guard limit produces a backlog
+// with no bound, and no checkpoint signer produces audit evidence that nothing has promised
+// reaches any particular sequence - a gap the anchored restore is built to catch and could not
+// catch if nothing ever wrote the anchor. Partitions are the one exception - an unwritten deployment genuinely
 // has none, and refusing to boot would make the empty case the only case that cannot start.
 //
 // The components downstream carry their own guards. These exist so a caller assembling the
@@ -204,6 +223,7 @@ func validate(d Deps) error {
 		value any
 	}{
 		{"a sink for accepted audit records", d.Sink},
+		{"a signer for the audit checkpoints that anchor each exported batch", d.CheckpointSigner},
 		{"a reader to rehydrate the audit chain from", d.ChainReader},
 		{"a durable store for the model registry", d.Store},
 		{"a reader to rehydrate the model registry from", d.Snapshot},

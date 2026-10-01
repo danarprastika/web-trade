@@ -72,7 +72,7 @@ Mechanically established against a real OS process and a real PostgreSQL 17.11. 
 
 ## Evidence artifacts
 
-87 files, 1034522 bytes, digest `sha256`.
+88 files, 1077247 bytes, digest `sha256`.
 
 Every path is relative to the repository root and every digest is over the exact bytes at the commit above. A criterion cannot be re-verified without these.
 
@@ -99,13 +99,14 @@ Every path is relative to the repository root and every digest is over the exact
 | `services/control-plane/audit/restore.go` | `27b85d9c88770c5abce6d185a207be8b84e7d6789cc0af8b875ff53120bb06a8` | 9962 |
 | `services/control-plane/audit/restore_test.go` | `0f445302c6a20765621f44eb8bb0e9d079cde02db45d097cf9b85133fadf6bd6` | 11002 |
 | `services/control-plane/audit/retention.go` | `3da295128848fd33a46f1b0020067b1093189e5964459669fac3b90a7a1ab96e` | 3921 |
-| `services/control-plane/audit/sink.go` | `ae4b9e18c1cf9c111ff2c4aaa5a817dc2ba9e9d5e7f2bd9e7b28df5f3bfd3dfa` | 11279 |
-| `services/control-plane/audit/sink_test.go` | `03b7130ba96541cf18a200c649bae10b73ea3aa54e9de7dbdc5ced605523c95a` | 16327 |
+| `services/control-plane/audit/sink.go` | `7b80f9abca38488f2d4a65d41de7a5e173cf03858d9ce6b3bfda481ec736181c` | 19471 |
+| `services/control-plane/audit/sink_checkpoint_test.go` | `e7746ca4e9d28e190d7597e78a871bd0dc9e22b00afe455f9167a568ae0e4716` | 14772 |
+| `services/control-plane/audit/sink_test.go` | `a4023be14267d03132fe033c9404a71bc26412d0309314672ca192356b861f3f` | 19465 |
 | `services/control-plane/audit/verify.go` | `99ad8860381547f350c1ae842b8bc2d712615e4263bc878863ecb67a87644ffb` | 8202 |
 | `services/control-plane/audit/verify_test.go` | `adbe1227fa0351864d53539ea4e29685a1a0c401e57174c1fe009833af1e23df` | 9011 |
-| `services/control-plane/bootstrap/bootstrap.go` | `8ca4e59d452ce5339e8d619663f8f8aee7f401c8a399049ba8bc2892eee2f508` | 9673 |
-| `services/control-plane/bootstrap/bootstrap_test.go` | `31e7a3f55bbd498a603158e5df2d720f3da5b82e07e2f66ac85e715fa77aadcb` | 12000 |
-| `services/control-plane/cmd/control-plane/main.go` | `4fa55ad0c56615817a9972920c53b9c2fae88d35273cb5cbb5079ab9e8940acd` | 18214 |
+| `services/control-plane/bootstrap/bootstrap.go` | `8caf101a61398e7da269ab6933f0dadad51c4b6ad935482fc7ed63c47da44622` | 11098 |
+| `services/control-plane/bootstrap/bootstrap_test.go` | `0b33c62bfd8b101bbd3785cc877a0b456c055cb650a358e37cff1590a25a2ace` | 14309 |
+| `services/control-plane/cmd/control-plane/main.go` | `d2416559c1d91e8bbe4a50fd314a0749028fc41144fc31a7f7f15615fa07bac9` | 20913 |
 | `services/control-plane/cmd/control-plane/main_test.go` | `64a7420c8bcec3cc5a19d9299dbbfc59952827ffe68ea6648f1ef11cea899390` | 12084 |
 | `services/control-plane/cmd/migrate/main.go` | `7e256beb715e8509d5207f1369158a570e88cbd37247c4432ce90b236a71d8f8` | 8745 |
 | `services/control-plane/cmd/migrate/main_test.go` | `e8bed87001e2b1c04b6a7a7061e5d6c50a795e85c51eebcef89a572f4332fe8e` | 15428 |
@@ -114,14 +115,14 @@ Every path is relative to the repository root and every digest is over the exact
 | `services/control-plane/go.mod` | `b9f11a0ba71bb93e27752d41734781c9dd2f390d82b3cd6796b48a826d8b652a` | 1258 |
 | `services/control-plane/go.sum` | `90f48a605768fc3f5813e27cd5c63e854f07b8d1d92a5f6d7f9b9862e02ea445` | 155 |
 | `services/control-plane/integration/atomicity_test.go` | `45ec96cd8a1223d0025552ea39595bf7edf591fa65cb83e485e008b0f772e4d7` | 5260 |
-| `services/control-plane/integration/audit_test.go` | `ce2a1d3fedee2b84e271d26adc6264787aee7b1d044e56f9d0cf59ea6211b6bf` | 13547 |
-| `services/control-plane/integration/destructive_guard_test.go` | `8e259a02c811925f7b606593fca96225e4db1fbc6a2010f7b164b880cd03d210` | 12001 |
+| `services/control-plane/integration/audit_test.go` | `d2f9a36f87c8eca70026a204076fb971ca04f598fae9b16ab52da0987b512d78` | 20147 |
+| `services/control-plane/integration/destructive_guard_test.go` | `f533ffc3f0cf3f17920e415aa0ae1e71f706ef7230784aa7c6a095e037de4fd8` | 14044 |
 | `services/control-plane/integration/entrypoint_test.go` | `77d1eaf821e4bbca4eaf76c03f7799d53fdca68f4884ba3e351e7bce63d914d8` | 17974 |
-| `services/control-plane/integration/harness_test.go` | `7be7599615133ae23f8a9615ec91b9c88bb807bc8ba26cc9ecffdb15bcc1e6bc` | 13597 |
+| `services/control-plane/integration/harness_test.go` | `5918b2aee68b52f7e785466e766e81055a8dd7f60f62dc0aa3851570cc8219d0` | 15024 |
 | `services/control-plane/integration/identity_test.go` | `eefc72f46903ab30d63175e43a1387a178f504c064a321d5e62494f7ca366f26` | 10270 |
 | `services/control-plane/integration/migrator_test.go` | `f842dc3a7ad27b851b1cb5dde4308e54058c2a513b748311fa79c9ac863c3afc` | 6742 |
 | `services/control-plane/integration/model_store_test.go` | `41fba578bbf0b1060f9ae1e9a1f413dd42bbd873036a5ad25ffb99ba3ccc08b0` | 10264 |
-| `services/control-plane/integration/restart_test.go` | `d2d2c29e915037e88778639acb773a583a0b2e24ca35fb78d15e876a7618b7ee` | 11229 |
+| `services/control-plane/integration/restart_test.go` | `be655c871b4f50d241853219f7c1c5c06e2efbbf7d0f28f7d1ca05274a39a000` | 11349 |
 | `services/control-plane/migrate/live_test.go` | `4968d75d221d4edfd4360453f291c1eca354fa635a2c611eb4a53606853f142f` | 13759 |
 | `services/control-plane/migrate/lock_test.go` | `f386db01558d3fbe9e6fbe8117005366e87ac1b52adcaac7044538ae137f0f33` | 9021 |
 | `services/control-plane/migrate/migrate.go` | `e27ec916de880e67edc4863b4933614178a48dd2a09ed1459b860b3b9403e34b` | 17852 |

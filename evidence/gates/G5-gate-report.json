@@ -70,8 +70,8 @@
   ],
   "evidence_artifacts": {
     "hash": "sha256",
-    "count": 87,
-    "total_bytes": 1034522,
+    "count": 88,
+    "total_bytes": 1077247,
     "note": "Every path is relative to the repository root and every digest is over the exact bytes at the commit above. A criterion cannot be re-verified without these.",
     "artifacts": [
       {
@@ -181,13 +181,18 @@
       },
       {
         "path": "services/control-plane/audit/sink.go",
-        "sha256": "ae4b9e18c1cf9c111ff2c4aaa5a817dc2ba9e9d5e7f2bd9e7b28df5f3bfd3dfa",
-        "bytes": 11279
+        "sha256": "7b80f9abca38488f2d4a65d41de7a5e173cf03858d9ce6b3bfda481ec736181c",
+        "bytes": 19471
+      },
+      {
+        "path": "services/control-plane/audit/sink_checkpoint_test.go",
+        "sha256": "e7746ca4e9d28e190d7597e78a871bd0dc9e22b00afe455f9167a568ae0e4716",
+        "bytes": 14772
       },
       {
         "path": "services/control-plane/audit/sink_test.go",
-        "sha256": "03b7130ba96541cf18a200c649bae10b73ea3aa54e9de7dbdc5ced605523c95a",
-        "bytes": 16327
+        "sha256": "a4023be14267d03132fe033c9404a71bc26412d0309314672ca192356b861f3f",
+        "bytes": 19465
       },
       {
         "path": "services/control-plane/audit/verify.go",
@@ -201,18 +206,18 @@
       },
       {
         "path": "services/control-plane/bootstrap/bootstrap.go",
-        "sha256": "8ca4e59d452ce5339e8d619663f8f8aee7f401c8a399049ba8bc2892eee2f508",
-        "bytes": 9673
+        "sha256": "8caf101a61398e7da269ab6933f0dadad51c4b6ad935482fc7ed63c47da44622",
+        "bytes": 11098
       },
       {
         "path": "services/control-plane/bootstrap/bootstrap_test.go",
-        "sha256": "31e7a3f55bbd498a603158e5df2d720f3da5b82e07e2f66ac85e715fa77aadcb",
-        "bytes": 12000
+        "sha256": "0b33c62bfd8b101bbd3785cc877a0b456c055cb650a358e37cff1590a25a2ace",
+        "bytes": 14309
       },
       {
         "path": "services/control-plane/cmd/control-plane/main.go",
-        "sha256": "4fa55ad0c56615817a9972920c53b9c2fae88d35273cb5cbb5079ab9e8940acd",
-        "bytes": 18214
+        "sha256": "d2416559c1d91e8bbe4a50fd314a0749028fc41144fc31a7f7f15615fa07bac9",
+        "bytes": 20913
       },
       {
         "path": "services/control-plane/cmd/control-plane/main_test.go",
@@ -256,13 +261,13 @@
       },
       {
         "path": "services/control-plane/integration/audit_test.go",
-        "sha256": "ce2a1d3fedee2b84e271d26adc6264787aee7b1d044e56f9d0cf59ea6211b6bf",
-        "bytes": 13547
+        "sha256": "d2f9a36f87c8eca70026a204076fb971ca04f598fae9b16ab52da0987b512d78",
+        "bytes": 20147
       },
       {
         "path": "services/control-plane/integration/destructive_guard_test.go",
-        "sha256": "8e259a02c811925f7b606593fca96225e4db1fbc6a2010f7b164b880cd03d210",
-        "bytes": 12001
+        "sha256": "f533ffc3f0cf3f17920e415aa0ae1e71f706ef7230784aa7c6a095e037de4fd8",
+        "bytes": 14044
       },
       {
         "path": "services/control-plane/integration/entrypoint_test.go",
@@ -271,8 +276,8 @@
       },
       {
         "path": "services/control-plane/integration/harness_test.go",
-        "sha256": "7be7599615133ae23f8a9615ec91b9c88bb807bc8ba26cc9ecffdb15bcc1e6bc",
-        "bytes": 13597
+        "sha256": "5918b2aee68b52f7e785466e766e81055a8dd7f60f62dc0aa3851570cc8219d0",
+        "bytes": 15024
       },
       {
         "path": "services/control-plane/integration/identity_test.go",
@@ -291,8 +296,8 @@
       },
       {
         "path": "services/control-plane/integration/restart_test.go",
-        "sha256": "d2d2c29e915037e88778639acb773a583a0b2e24ca35fb78d15e876a7618b7ee",
-        "bytes": 11229
+        "sha256": "be655c871b4f50d241853219f7c1c5c06e2efbbf7d0f28f7d1ca05274a39a000",
+        "bytes": 11349
       },
       {
         "path": "services/control-plane/migrate/live_test.go",

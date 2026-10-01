@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -54,6 +55,7 @@ func (r replayingChainReader) ReadPartition(
 // chain reader that replays them, plus the in-memory stores standing in for the database tables.
 type fixture struct {
 	sink      *recordingSink
+	signer    audit.Signer
 	store     *model.MemoryStore
 	identity  *model.MemoryIdentityStore
 	clockTick time.Time
@@ -62,10 +64,25 @@ type fixture struct {
 func newFixture() *fixture {
 	return &fixture{
 		sink:      &recordingSink{},
+		signer:    mustSigner("key-bootstrap-test"),
 		store:     model.NewMemoryStore(),
 		identity:  model.NewMemoryIdentityStore(),
 		clockTick: time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC),
 	}
+}
+
+// mustSigner returns a signing key for the fixtures.
+//
+// It panics rather than taking a *testing.T because the fixture constructors do not, and
+// NewLocalSigner has exactly one failure mode worth handling here: the host cannot produce
+// randomness. A test binary that cannot generate a key cannot verify a signed checkpoint
+// either, so there is nothing useful left to report.
+func mustSigner(keyID string) audit.Signer {
+	signer, err := audit.NewLocalSigner(keyID)
+	if err != nil {
+		panic("bootstrap test: NewLocalSigner(" + keyID + "): " + err.Error())
+	}
+	return signer
 }
 
 // deps builds the Deps for a stack over this fixture, rehydrating the named partitions.
@@ -75,15 +92,16 @@ func (f *fixture) deps(partitions []string) Deps {
 			f.clockTick = f.clockTick.Add(time.Second)
 			return f.clockTick
 		},
-		Environment: "test",
-		GuardLimit:  8,
-		Partitions:  partitions,
-		Sink:        f.sink,
-		ChainReader: replayingChainReader{sink: f.sink},
-		Store:       f.store,
-		Snapshot:    f.store,
-		Identity:    f.identity,
-		Identities:  f.identity,
+		Environment:      "test",
+		GuardLimit:       8,
+		Partitions:       partitions,
+		Sink:             f.sink,
+		CheckpointSigner: f.signer,
+		ChainReader:      replayingChainReader{sink: f.sink},
+		Store:            f.store,
+		Snapshot:         f.store,
+		Identity:         f.identity,
+		Identities:       f.identity,
 	}
 }
 
@@ -252,6 +270,7 @@ func TestBuildRefusesEveryMissingDependency(t *testing.T) {
 		"no guard limit":              func(d *Deps) { d.GuardLimit = 0 },
 		"a negative guard limit":      func(d *Deps) { d.GuardLimit = -1 },
 		"no sink":                     func(d *Deps) { d.Sink = nil },
+		"no checkpoint signer":        func(d *Deps) { d.CheckpointSigner = nil },
 		"no chain reader":             func(d *Deps) { d.ChainReader = nil },
 		"no model store":              func(d *Deps) { d.Store = nil },
 		"no registry snapshot":        func(d *Deps) { d.Snapshot = nil },
@@ -299,6 +318,41 @@ func TestBuildStartsAgainstEmptyDurableState(t *testing.T) {
 	}
 	if stack.Chain.LastSequence("any-partition") != 0 {
 		t.Fatal("an empty chain reported a nonzero sequence")
+	}
+}
+
+// A deployment with no checkpoint signer has no way to produce the anchor that makes a deleted
+// tail detectable, so the stack must not be assembled at all. This is checked separately from
+// the table above because that one only sees "an error came back", and this needs the error to
+// name the signer: an operator who sees "bootstrap requires a sink" when the sink is present
+// goes looking in the wrong place.
+func TestBuildRefusesToAssembleAStackWithNoCheckpointSigner(t *testing.T) {
+	d := newFixture().deps(nil)
+	d.CheckpointSigner = nil
+
+	stack, err := Build(context.Background(), d)
+	if err == nil {
+		t.Fatal("a deployment with no checkpoint signer was assembled; its audit trail would " +
+			"have no anchor, and a truncated archive would restore as verified")
+	}
+	if !strings.Contains(err.Error(), "signer") {
+		t.Fatalf("the refusal must name the missing signer, got: %v", err)
+	}
+	if stack != nil {
+		t.Fatal("Build returned a stack alongside its refusal")
+	}
+}
+
+// A signer assigned as a typed nil satisfies the interface, so this reaches the components
+// rather than being refused - the same reason the table's sink case exists, and the reason
+// isNil is not a plain comparison.
+func TestBuildRefusesATypedNilCheckpointSigner(t *testing.T) {
+	var signer *audit.LocalSigner
+	d := newFixture().deps(nil)
+	d.CheckpointSigner = signer
+
+	if stack, err := Build(context.Background(), d); err == nil {
+		t.Fatalf("Build accepted a typed-nil checkpoint signer: %v", stack)
 	}
 }
 

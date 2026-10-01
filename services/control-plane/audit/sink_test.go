@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/danarprastika/web-trade/services/control-plane/db/dbgen"
 )
@@ -36,6 +37,16 @@ func (f *fakeSink) Export(_ context.Context, records []Record) error {
 type recordingQuerier struct {
 	calls  []dbgen.AppendAuditRecordParams
 	failAt int
+
+	// checkpoints records what the sink asked to be anchored, and checkpointErr makes that
+	// write fail. Kept apart from calls because the two writes are different claims: calls
+	// says what evidence was stored, checkpoints says what was promised about it, and a test
+	// that conflated them could not tell an unanchored export from an anchored one.
+	checkpoints   []dbgen.AppendAuditCheckpointParams
+	checkpointErr error
+	// checkpointFailAt fails the nth checkpoint write (1-based), for a batch spanning more
+	// than one partition where only some anchors can be stored.
+	checkpointFailAt int
 }
 
 func (q *recordingQuerier) AppendAuditRecord(
@@ -47,6 +58,68 @@ func (q *recordingQuerier) AppendAuditRecord(
 	}
 	q.calls = append(q.calls, arg)
 	return dbgen.AuditRecord{}, nil
+}
+
+func (q *recordingQuerier) AppendAuditCheckpoint(
+	_ context.Context, arg dbgen.AppendAuditCheckpointParams,
+) (dbgen.AuditCheckpoint, error) {
+	if q.checkpointErr != nil {
+		q.checkpoints = append(q.checkpoints, arg)
+		return dbgen.AuditCheckpoint{}, q.checkpointErr
+	}
+	if q.checkpointFailAt > 0 && len(q.checkpoints)+1 == q.checkpointFailAt {
+		q.checkpoints = append(q.checkpoints, arg)
+		return dbgen.AuditCheckpoint{}, errors.New("sink: simulated checkpoint write failure")
+	}
+	q.checkpoints = append(q.checkpoints, arg)
+	return dbgen.AuditCheckpoint{}, nil
+}
+
+// checkpointFor returns the single checkpoint the sink recorded for partition.
+func (q *recordingQuerier) checkpointFor(t *testing.T, partition string) dbgen.AppendAuditCheckpointParams {
+	t.Helper()
+	for _, cp := range q.checkpoints {
+		if cp.Partition == partition {
+			return cp
+		}
+	}
+	t.Fatalf("no checkpoint was written for partition %s; %d checkpoint(s) were written for %v",
+		partition, len(q.checkpoints), partitionsOf(q.checkpoints))
+	return dbgen.AppendAuditCheckpointParams{}
+}
+
+func partitionsOf(params []dbgen.AppendAuditCheckpointParams) []string {
+	out := make([]string, 0, len(params))
+	for _, p := range params {
+		out = append(out, p.Partition)
+	}
+	return out
+}
+
+// hashOf converts a stored byte slice back to a fixed-size hash, for assertions about what the
+// sink wrote.
+func hashOf(t *testing.T, raw []byte) Hash {
+	t.Helper()
+	var h Hash
+	if len(raw) != len(h) {
+		t.Fatalf("stored hash is %d bytes, want %d", len(raw), len(h))
+	}
+	copy(h[:], raw)
+	return h
+}
+
+// testAnchor returns an anchor over a fresh local key, and the ring that verifies its work.
+//
+// The ring is returned because a checkpoint that is stored but does not verify is not an
+// anchor: it is bytes in a column. Asserting against the ring is what makes "signed" mean
+// something rather than "a non-empty bytea was written".
+func testAnchor(t *testing.T, signer *LocalSigner) *Anchor {
+	t.Helper()
+	a, err := NewAnchor(signer, func() time.Time { return checkpointTime.Time() })
+	if err != nil {
+		t.Fatalf("NewAnchor: %v", err)
+	}
+	return a
 }
 
 func TestExportedIsReleasedOnlyAfterTheSinkCommits(t *testing.T) {
@@ -255,8 +328,9 @@ func TestExportingMoreThanWasAcceptedIsReported(t *testing.T) {
 }
 
 func TestTheSinkWritesEveryRecordInChainOrder(t *testing.T) {
+	_, signer := fixtureRing(t)
 	q := &recordingQuerier{}
-	sink, err := NewSQLSinkInTx(q)
+	sink, err := NewSQLSinkInTx(q, testAnchor(t, signer))
 	if err != nil {
 		t.Fatalf("NewSQLSinkInTx: %v", err)
 	}
@@ -291,11 +365,13 @@ func TestTheSinkWritesEveryRecordInChainOrder(t *testing.T) {
 }
 
 func TestTheSinkRefusesToConstructWithoutADatabaseHandle(t *testing.T) {
-	if _, err := NewSQLSink(nil); err == nil {
+	_, signer := fixtureRing(t)
+	anchor := testAnchor(t, signer)
+	if _, err := NewSQLSink(nil, anchor); err == nil {
 		t.Fatal("a sink with no database handle must be refused rather than built and " +
 			"left to fail on first use")
 	}
-	if _, err := NewSQLSinkInTx(nil); err == nil {
+	if _, err := NewSQLSinkInTx(nil, anchor); err == nil {
 		t.Fatal("a sink with no querier must be refused")
 	}
 }
@@ -393,8 +469,9 @@ func TestParamsForTakesItsRecordByValue(t *testing.T) {
 }
 
 func TestAnEmptyBatchIsNotOpenedAsATransaction(t *testing.T) {
+	_, signer := fixtureRing(t)
 	q := &recordingQuerier{}
-	sink, err := NewSQLSinkInTx(q)
+	sink, err := NewSQLSinkInTx(q, testAnchor(t, signer))
 	if err != nil {
 		t.Fatalf("NewSQLSinkInTx: %v", err)
 	}
@@ -404,11 +481,16 @@ func TestAnEmptyBatchIsNotOpenedAsATransaction(t *testing.T) {
 	if len(q.calls) != 0 {
 		t.Fatalf("an empty export issued %d writes, want 0", len(q.calls))
 	}
+	if len(q.checkpoints) != 0 {
+		t.Fatalf("an empty export closed %d checkpoint(s); a checkpoint must cover at least "+
+			"one record, so there was nothing to anchor", len(q.checkpoints))
+	}
 }
 
 func TestAQuerierFailureAbortsTheRestOfTheBatch(t *testing.T) {
+	_, signer := fixtureRing(t)
 	q := &recordingQuerier{failAt: 2}
-	sink, err := NewSQLSinkInTx(q)
+	sink, err := NewSQLSinkInTx(q, testAnchor(t, signer))
 	if err != nil {
 		t.Fatalf("NewSQLSinkInTx: %v", err)
 	}

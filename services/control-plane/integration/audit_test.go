@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"sync/atomic"
@@ -13,6 +14,46 @@ import (
 	"github.com/danarprastika/web-trade/services/control-plane/audit"
 	"github.com/lib/pq"
 )
+
+// liveSigning returns the checkpoint signer and the anchor the integration suite exports
+// through.
+//
+// Both are returned because a caller needs the signer for a Deps or a verification ring and
+// the anchor to build the sink, and constructing them separately in every test would make it
+// too easy to wire a sink that cannot anchor without noticing.
+//
+// The key id is fixed rather than unique-per-run because nothing in this suite depends on it
+// being distinguishable, and the key itself is generated in process: the anchored restore
+// compares an anchor's sequence and hash and leaves authenticity to the Verifier's key ring,
+// which no test here builds from a database row.
+func liveSigning(t *testing.T) (*audit.LocalSigner, *audit.Anchor) {
+	t.Helper()
+
+	signer, err := audit.NewLocalSigner("key-integration")
+	if err != nil {
+		t.Fatalf("building the checkpoint signer: %v", err)
+	}
+	// A fixed clock, so a checkpoint's created_at is the same on every run and a rerun against
+	// the same database produces the same bytes.
+	anchor, err := audit.NewAnchor(signer, func() time.Time {
+		return time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	})
+	if err != nil {
+		t.Fatalf("building the checkpoint anchor: %v", err)
+	}
+	return signer, anchor
+}
+
+// liveSink builds the production SQL sink over db.
+func liveSink(t *testing.T, db *sql.DB) *audit.SQLSink {
+	t.Helper()
+	_, anchor := liveSigning(t)
+	sink, err := audit.NewSQLSink(db, anchor)
+	if err != nil {
+		t.Fatalf("building the SQL sink: %v", err)
+	}
+	return sink
+}
 
 // auditRecord returns a staged record: valid in every field, but with no sequence and no
 // predecessor hash, because those are the chain's to assign.
@@ -117,10 +158,7 @@ func TestAnAuditChainSurvivesAWriteAndARehydrationThroughSQL(t *testing.T) {
 	}
 	chain := audit.NewChain()
 
-	sink, err := audit.NewSQLSink(db)
-	if err != nil {
-		t.Fatalf("building the SQL sink: %v", err)
-	}
+	sink := liveSink(t, db)
 	exporter, err := audit.NewExporter(guard, sink)
 	if err != nil {
 		t.Fatalf("building the exporter: %v", err)
@@ -238,10 +276,7 @@ func TestARehydratedChainAcceptsFurtherAppends(t *testing.T) {
 	if err != nil {
 		t.Fatalf("building the guard: %v", err)
 	}
-	sink, err := audit.NewSQLSink(db)
-	if err != nil {
-		t.Fatalf("building the SQL sink: %v", err)
-	}
+	sink := liveSink(t, db)
 	exporter, err := audit.NewExporter(guard, sink)
 	if err != nil {
 		t.Fatalf("building the exporter: %v", err)
@@ -318,10 +353,7 @@ func TestTimestampsRoundTripAtPostgresPrecision(t *testing.T) {
 	if err != nil {
 		t.Fatalf("building the guard: %v", err)
 	}
-	sink, err := audit.NewSQLSink(db)
-	if err != nil {
-		t.Fatalf("building the sink: %v", err)
-	}
+	sink := liveSink(t, db)
 	exporter, err := audit.NewExporter(guard, sink)
 	if err != nil {
 		t.Fatalf("building the exporter: %v", err)
@@ -360,5 +392,129 @@ func TestTimestampsRoundTripAtPostgresPrecision(t *testing.T) {
 			got[0].OccurredAt.Time(),
 			accepted[0].OccurredAt.Time(),
 			accepted[0].OccurredAt.Time().Truncate(time.Microsecond))
+	}
+}
+
+// The round trip nothing covered: records go out through the real SQL sink and the anchor
+// comes back through the real SQL reader, with nothing in this test writing a checkpoint.
+//
+// Until the sink gained a checkpoint producer, audit_checkpoints was read but never written
+// outside tests, so every anchor assertion in the suite was self-fulfilling - the test put the
+// anchor there and then checked that the reader found it. Against a live database the table
+// stayed empty, GetLatestAuditCheckpoint answered sql.ErrNoRows, Rehydrate fell through to the
+// unanchored path, and a truncated archive still restored as VERIFIED. The only way to see that
+// is to let the sink be the only writer and then look for what it left behind.
+//
+// The signature is verified against a ring built from the same signer, which closes the loop
+// through storage rather than through the object: the bytes that came back out of PostgreSQL
+// are a real signature over the canonical payload of the checkpoint they describe.
+func TestTheSinkWritesACheckpointThatARehydrationFinds(t *testing.T) {
+	db := open(t)
+	ctx := ctxFor(t)
+
+	signer, anchor := liveSigning(t)
+	ring := audit.NewKeyRing()
+	if err := signer.Register(ring, audit.KeySigning); err != nil {
+		t.Fatalf("registering the signing key: %v", err)
+	}
+
+	partitions := []string{auditPartition(t, "anchor-a"), auditPartition(t, "anchor-b")}
+	counts := map[string]int{partitions[0]: 3, partitions[1]: 2}
+
+	chain := audit.NewChain()
+	var batch []audit.Record
+	for _, partition := range partitions {
+		for i := 0; i < counts[partition]; i++ {
+			accepted, err := chain.Append([]audit.Record{
+				auditRecord(fmt.Sprintf("aud-%020d", len(batch)+1), partition, i),
+			})
+			if err != nil {
+				t.Fatalf("appending to the chain: %v", err)
+			}
+			batch = append(batch, accepted[0])
+		}
+	}
+
+	sink, err := audit.NewSQLSink(db, anchor)
+	if err != nil {
+		t.Fatalf("building the SQL sink: %v", err)
+	}
+	if err := sink.Export(ctx, batch); err != nil {
+		t.Fatalf("exporting to the database: %v", err)
+	}
+
+	// The anchor is in the table, written by the sink and by nothing else. Counted in SQL
+	// rather than inferred from the sink's return value, because a sink that reported success
+	// while the table stayed empty is exactly the failure being guarded.
+	var stored int
+	if err := db.QueryRowContext(ctx,
+		`SELECT count(*) FROM public.audit_checkpoints WHERE partition = ANY($1);`,
+		pq.Array(partitions)).Scan(&stored); err != nil {
+		t.Fatalf("counting checkpoints: %v", err)
+	}
+	if stored != len(partitions) {
+		t.Fatalf("the export left %d checkpoint(s) in audit_checkpoints for %d partition(s); "+
+			"the anchor the restore compares against was not written", stored, len(partitions))
+	}
+
+	reader, err := audit.NewSQLChainReader(db)
+	if err != nil {
+		t.Fatalf("building the SQL chain reader: %v", err)
+	}
+
+	// Each partition's anchor must be found, and must describe the head of the records the
+	// export actually stored - not merely exist. An anchor at the wrong sequence or the wrong
+	// hash would either refuse an intact archive or fail to detect a deleted tail while
+	// looking like the fix working.
+	for _, partition := range partitions {
+		cp, found, err := reader.LatestCheckpoint(ctx, partition)
+		if err != nil {
+			t.Fatalf("reading the latest checkpoint of partition %s: %v", partition, err)
+		}
+		if !found {
+			t.Fatalf("partition %s has no checkpoint after a successful export; Rehydrate "+
+				"will fall through to the unanchored path and a truncated archive will restore "+
+				"as verified", partition)
+		}
+		var head audit.Record
+		for _, r := range batch {
+			if r.Partition == partition && r.Sequence == cp.LastSequence {
+				head = r
+			}
+		}
+		if head.AuditID == "" {
+			t.Fatalf("the anchor for partition %s names sequence %d, which the export never "+
+				"stored; the archive would be refused for a reason it did not earn",
+				partition, cp.LastSequence)
+		}
+		if cp.LastSequence != int64(counts[partition]) {
+			t.Errorf("partition %s anchored at last_sequence %d, want %d",
+				partition, cp.LastSequence, counts[partition])
+		}
+		if cp.LastHash != head.RecordHash {
+			t.Errorf("partition %s anchored at hash %s, want %s; this is the exact pair the "+
+				"anchored restore compares", partition, cp.LastHash, head.RecordHash)
+		}
+		if cp.Count != counts[partition] {
+			t.Errorf("partition %s anchor covers %d record(s), want %d",
+				partition, cp.Count, counts[partition])
+		}
+		if err := cp.Verify(ring); err != nil {
+			t.Errorf("the anchor stored for partition %s does not verify against the key it "+
+				"names; the checkpoint did not survive PostgreSQL as a signature: %v", partition, err)
+		}
+	}
+
+	// And the anchored restore accepts what it read, which is the half that has to keep working
+	// for the check to be worth anything: a fix that refuses every archive is not a fix.
+	rebuilt := audit.NewChain()
+	if err := audit.Rehydrate(ctx, rebuilt, reader, partitions); err != nil {
+		t.Fatalf("rehydrating against the anchors the sink wrote: %v", err)
+	}
+	for _, partition := range partitions {
+		if got := rebuilt.LastSequence(partition); got != int64(counts[partition]) {
+			t.Errorf("partition %s rehydrated to sequence %d, want %d",
+				partition, got, counts[partition])
+		}
 	}
 }

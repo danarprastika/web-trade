@@ -284,6 +284,14 @@ func destructiveRefusalMessage(v destructiveVerdict) string {
 // must not be the component that is wrong about a working DSN. lib/pq accepts that form, so a
 // developer using it gets a clear error telling them what the guard could not read rather than
 // a silent pass or a confusing partial parse.
+//
+// A query string that could redirect the connection is refused for the same reason. lib/pq reads
+// the path first and then applies every query parameter into one option map, last write winning,
+// so `webtrade_test?dbname=webtrade` connects to webtrade and `localhost/webtrade_test?host=prod`
+// connects to prod. Both would otherwise pass a guard that only read the path - and both point
+// the destructive reset at a database whose name the guard never saw. The parameters are named
+// rather than honoured because a guard that has to reimplement the driver's precedence rules is a
+// second implementation of connection parsing, and a stale one is a bypass.
 func parseDSNTarget(dsn string) (dsnTarget, error) {
 	raw := strings.TrimSpace(dsn)
 	if raw == "" {
@@ -304,6 +312,27 @@ func parseDSNTarget(dsn string) (dsnTarget, error) {
 	}
 	if u.User != nil {
 		target.user = u.User.Username()
+	}
+
+	// A dbname that merely restates the path changes nothing, so it is allowed through; anything
+	// else that could move the connection is refused by name.
+	overrides := make([]string, 0, 4)
+	for _, key := range []string{"dbname", "host", "port", "user"} {
+		switch key {
+		case "dbname":
+			if v := u.Query().Get(key); v != "" && v != target.database {
+				overrides = append(overrides, key)
+			}
+		default:
+			if u.Query().Get(key) != "" {
+				overrides = append(overrides, key)
+			}
+		}
+	}
+	if len(overrides) > 0 {
+		return dsnTarget{}, fmt.Errorf("DATABASE_URL carries %s in its query string, which "+
+			"overrides the path this guard reads; refusing rather than risk resetting a database "+
+			"the guard could not see", strings.Join(overrides, ", "))
 	}
 	return target, nil
 }
