@@ -260,6 +260,35 @@ jobs:
         # so it cannot pass by leaving the code untouched.
         run: python scripts/mutation_check_drain.py
 
+      - name: audit anchor tests can fail
+        # The tests in audit/sink_checkpoint_test.go are the only ones that can tell an audit
+        # sink which anchors its batch from one which merely appears to. That distinction is
+        # recent and load-bearing: the first version of the truncation fix read a partition's
+        # latest checkpoint and refused an archive whose head fell behind it, but nothing
+        # wrote that table. Every test of the fix inserted its own checkpoint by hand, so the
+        # suite was green while a real database would have restored a truncated archive as
+        # VERIFIED. These tests drive Export and read back what it actually wrote, which is
+        # what makes them capable of seeing a missing producer.
+        #
+        # Nothing established that they could fail. A refactor that dropped the
+        # AppendAuditCheckpoint call, or moved it outside the transaction, would leave the
+        # tests passing vacuously and the G5 audit-anchoring claim still reading as verified.
+        # The same failure mode EV-064 and EV-065 recorded in the tests themselves: a check
+        # that reports success without having exercised anything.
+        #
+        # The gate makes the sink compute and sign its checkpoints and then discard them, so
+        # records are committed that nothing says how far they reach. It requires the tests to
+        # notice, credits a detection only on a `--- FAIL` line rather than on a non-zero exit
+        # - a package that does not compile also exits non-zero with no test having run - runs
+        # a green baseline first so a test already broken at HEAD cannot be mistaken for
+        # detection, and restores the file byte-for-byte.
+        #
+        # scripts/prove_anchor_gate_detects_vacuous.py and
+        # scripts/prove_anchor_gate_rejects_build_failure.py hold this gate to the same
+        # standard it holds the tests to: both make it fail on purpose, so it has been observed
+        # failing rather than only observed passing.
+        run: python scripts/mutation_check_anchor.py
+
       - name: the G5 gate report is current
         # The G5 report is what a reviewer reads to decide that the gate passed. Until this step
         # existed it was a snapshot with nothing tying it to the code it describes: its digests
