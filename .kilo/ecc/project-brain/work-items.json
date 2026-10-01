@@ -15,7 +15,7 @@
         "EV-004",
         "EV-016"
       ],
-      "blocker": "Corrected from COMPLETED on review. Three of four acceptance criteria are met and machine-verified, but the fourth \u00e2\u20ac\u201d 'gate report records reviewer, commit, timestamp, command output, pass/fail' \u00e2\u20ac\u201d requires a named human reviewer, and none has been assigned. The G0 gate therefore reports PENDING_HUMAN_ATTESTATION, not PASS. Per docs/11, partial completion is FAIL, not a percentage. Close by: assign a named reviewer who attests the specification package and records their identity in evidence/gates/G0-gate-report.json (human_reviewer field).",
+      "blocker": "Corrected from COMPLETED on review. Three of four acceptance criteria are met and machine-verified, but the fourth â€” 'gate report records reviewer, commit, timestamp, command output, pass/fail' â€” requires a named human reviewer, and none has been assigned. The G0 gate therefore reports PENDING_HUMAN_ATTESTATION, not PASS. Per docs/11, partial completion is FAIL, not a percentage. Close by: assign a named reviewer who attests the specification package and records their identity in evidence/gates/G0-gate-report.json (human_reviewer field).",
       "partial_results": "scripts/verify_spec_gate.py implements all G0 criteria mechanically; 22 tests prove it detects single-byte tampering, semantically-neutral rewrites, appended/deleted documents, manifest count drift, legacy filename and versioned-directory markers, duplicate document bytes, and open ADRs. 7/7 mechanical criteria PASS on the real 26-document package.",
       "acceptance_criteria": [
         "All 26 manifest documents exist",
@@ -198,7 +198,7 @@
         "SBOM and provenance emitted per release artifact",
         "CI fails on unpinned dependencies or toolchain drift"
       ],
-      "source": "docs/09, docs/02 \u00c2\u00a710",
+      "source": "docs/09, docs/02 Â§10",
       "dependencies": [
         "WI-102",
         "WI-103",
@@ -301,7 +301,7 @@
         "Drift detection alert path implemented",
         "Feature flags: unknown flags never grant authority; last verified safe snapshot only within configured freshness"
       ],
-      "source": "docs/17, docs/25 \u00c2\u00a76",
+      "source": "docs/17, docs/25 Â§6",
       "dependencies": [
         "WI-110"
       ],
@@ -347,7 +347,7 @@
         "Property tests cover all risk invariants",
         "No risk-rejected command creates a live submission (verified by test)"
       ],
-      "source": "docs/04, docs/25 \u00c2\u00a73.1",
+      "source": "docs/04, docs/25 Â§3.1",
       "dependencies": [
         "WI-110",
         "WI-112"
@@ -374,7 +374,7 @@
         "UNKNOWN submission outcome is never converted to rejection or fill by timeout assumption",
         "Halt is monotonic: no lower-privilege action or recovery automation silently clears it"
       ],
-      "source": "docs/04, docs/01 \u00c2\u00a78, docs/25 \u00c2\u00a73.2, \u00c2\u00a73.9",
+      "source": "docs/04, docs/01 Â§8, docs/25 Â§3.2, Â§3.9",
       "dependencies": [
         "WI-114",
         "WI-113"
@@ -398,7 +398,7 @@
         "Projections and caches are rebuildable and carry no financial authority",
         "Positions reconcile to validated fills"
       ],
-      "source": "docs/04, docs/05, docs/25 \u00c2\u00a73.4",
+      "source": "docs/04, docs/05, docs/25 Â§3.4",
       "dependencies": [
         "WI-115"
       ],
@@ -480,7 +480,7 @@
         "No direct table writes outside the owning module",
         "Cross-module mutation only through explicit commands or transactional events"
       ],
-      "source": "docs/05, docs/01 \u00c2\u00a77",
+      "source": "docs/05, docs/01 Â§7",
       "dependencies": [
         "WI-118"
       ],
@@ -499,7 +499,7 @@
         "Delayed dispatch: no event loss, no duplicate domain transition; alert on lag; bounded backpressure",
         "No exactly-once assumption; consumers remain idempotent"
       ],
-      "source": "docs/05, ADR-006, ADR-020, docs/25 \u00c2\u00a76",
+      "source": "docs/05, ADR-006, ADR-020, docs/25 Â§6",
       "dependencies": [
         "WI-120"
       ],
@@ -687,7 +687,7 @@
         "Tool permission-denial, model rollback, and lineage tests pass",
         "Compromised research worker: workload identity revoked, artifacts quarantined, promotion blocked, forensic evidence preserved"
       ],
-      "source": "docs/07, docs/11 G5, docs/25 \u00c2\u00a75, \u00c2\u00a76",
+      "source": "docs/07, docs/11 G5, docs/25 Â§5, Â§6",
       "dependencies": [
         "WI-140",
         "WI-111",
@@ -741,9 +741,10 @@
         "EV-065",
         "EV-066",
         "EV-067",
-        "EV-068"
+        "EV-068",
+        "EV-069"
       ],
-      "completion_note": "EV-044 traced this item's rehydration blocker to its owner: the in-memory audit chain that prevents rehydrating a restarted journal is WI-117's AC4, and that criterion is not implemented, so rehydration is blocked by unmet work on another item rather than by anything left to do here. WI-141's own acceptance criteria say nothing about restart or recovery, and the audit-before-state ordering this item claims is verified for the writes that happen in-process, which is what the tests exercise. Rehydration evidence is now complete: EV-047 through EV-051 cover audit chain restoration, audit SQL rehydration, journal rehydration, identity rehydration, and EV-051's correction of an overstated verification claim in EV-050. The G5 gate report is at evidence/gates/G5-gate-report.json and .md, with a content digest for every artifact the gate rests on. Its verdict is FAIL, and the reason is not work left undone here: the five subsystems the G5 criterion names all pass, but audit-trail completeness across a process restart does not, because that is WI-117's AC4 and is not implemented. docs/11 requires that a gate be PASS only when every listed criterion is satisfied and that partial completion be FAIL rather than a percentage, so the report records that criterion as FAIL rather than omitting it. The item remains IN_PROGRESS pending a named human reviewer, who is not the author of this work; the report's human_reviewer field is null on purpose. Correction: this note previously said 'human G4 review'. WI-141 is a G5 item and G4 belongs to WI-140, which is already BLOCKED. The same error was carried into EV-053, EV-054, EV-055 and EV-056 and is corrected by EV-057, since the evidence log is append-only. The composition root is no longer missing: services/control-plane/bootstrap assembles the durable stack and is the first code in the repository to construct an audit Exporter or a rehydrated journal, which closes WI-117's AC4 wiring gap and lets the G5 restart criterion be met at the composition level. The G5 report's criterion was split accordingly, with rebuild-from-persisted-state now passing and startup-in-a-running-process recorded FAIL, because no entrypoint calls the composition root and no Go process has connected to PostgreSQL. The gate verdict is therefore still FAIL, for a narrower and better-stated reason than before. Rehydration evidence is now complete: EV-047 through EV-051 cover audit chain restoration, audit SQL rehydration, journal rehydration, identity rehydration, and EV-051's correction of an overstated verification claim in EV-050. EV-062 closes what this note previously described as outstanding. The gate verdict is PASS: all seven G5 criteria, with G5.7 mechanically verified by TestARunningProcessRebuildsItsStackFromPostgreSQLOnStartup, which compiles services/control-plane/cmd/control-plane, seeds a model, an audit trail and a revocation through the real write paths, runs the binary as a separate OS process, and asserts over HTTP that it recovered them from PostgreSQL. The entrypoint also fails closed, which is asserted rather than assumed: a registry that cannot be corroborated against the rehydrated audit chain produces exit code 2 and nothing listening. Two limits are recorded rather than smoothed over. The process exposes no write path, because audit records reach storage through a caller-driven accept-then-export pair that no background loop can substitute for, so /readyz reports write_path_exposed as false. The graceful shutdown drain was, when this note was first written, unproven on Windows, where os.Process.Signal does not deliver os.Interrupt to another process, and was exercised only by an operator's actual shutdown. That limit no longer holds. serve() now takes its interrupt channel as a parameter, so a test can drive the drain directly rather than signalling another process, and the drain is proven on every platform: an in-flight request is still answered after the interrupt and is answered completely rather than truncated, new requests are refused, the shutdown deadline is honoured instead of waiting on a stuck handler, and a failed listener is reported as an unexpected stop with exit 1. The tests are in services/control-plane/cmd/control-plane/main_test.go, they exercise a real listener and a real HTTP request, and the extraction that made them reachable changed no production behaviour. The tests were themselves mutation-checked: replacing the graceful Shutdown with a hard Close fails two of them. Cross-store atomicity between a registry write and its audit record remains WI-120 and WI-121's and is not claimed by this item. The earlier correction stands and is not repeated: WI-141 is a G5 item, G4 belongs to WI-140, and the stale 'human G4 review' phrasing in this note and in EV-053 through EV-056 was corrected by EV-057 because the evidence log is append-only. One correction supersedes part of EV-062 and EV-063 rather than their conclusions: both state that the integration suite passed, and it did not run. Both were invoked with TEST_DATABASE_URL set while the harness in integration/harness_test.go reads DATABASE_URL, so every test took its skip branch, and go test printed ok and exited 0 over seventeen skips. The suite against a live PostgreSQL 17.11 is 17 passed, 0 failed, 0 skipped, so G5.7's conclusion stands and only the description of the run was wrong; EV-064 records the correction, because the ledger is append-only and a quiet rewrite would be indistinguishable from the error it corrects. The CI integration job now fails loudly if DATABASE_URL is absent or the database is unreachable, so the invariant the harness comment had been asserting in prose is enforced. The item remains IN_PROGRESS because the G5 report's human_reviewer is null and the project reserves a named human sign-off, not because G5 evidence is incomplete."
+      "completion_note": "EV-044 traced this item's rehydration blocker to its owner: the in-memory audit chain that prevents rehydrating a restarted journal is WI-117's AC4, and that criterion is not implemented, so rehydration is blocked by unmet work on another item rather than by anything left to do here. WI-141's own acceptance criteria say nothing about restart or recovery, and the audit-before-state ordering this item claims is verified for the writes that happen in-process, which is what the tests exercise. Rehydration evidence is now complete: EV-047 through EV-051 cover audit chain restoration, audit SQL rehydration, journal rehydration, identity rehydration, and EV-051's correction of an overstated verification claim in EV-050. The G5 gate report is at evidence/gates/G5-gate-report.json and .md, with a content digest for every artifact the gate rests on. Its verdict is FAIL, and the reason is not work left undone here: the five subsystems the G5 criterion names all pass, but audit-trail completeness across a process restart does not, because that is WI-117's AC4 and is not implemented. docs/11 requires that a gate be PASS only when every listed criterion is satisfied and that partial completion be FAIL rather than a percentage, so the report records that criterion as FAIL rather than omitting it. The item remains IN_PROGRESS pending a named human reviewer, who is not the author of this work; the report's human_reviewer field is null on purpose. Correction: this note previously said 'human G4 review'. WI-141 is a G5 item and G4 belongs to WI-140, which is already BLOCKED. The same error was carried into EV-053, EV-054, EV-055 and EV-056 and is corrected by EV-057, since the evidence log is append-only. The composition root is no longer missing: services/control-plane/bootstrap assembles the durable stack and is the first code in the repository to construct an audit Exporter or a rehydrated journal, which closes WI-117's AC4 wiring gap and lets the G5 restart criterion be met at the composition level. The G5 report's criterion was split accordingly, with rebuild-from-persisted-state now passing and startup-in-a-running-process recorded FAIL, because no entrypoint calls the composition root and no Go process has connected to PostgreSQL. The gate verdict is therefore still FAIL, for a narrower and better-stated reason than before. Rehydration evidence is now complete: EV-047 through EV-051 cover audit chain restoration, audit SQL rehydration, journal rehydration, identity rehydration, and EV-051's correction of an overstated verification claim in EV-050. EV-062 closes what this note previously described as outstanding. The gate verdict is PASS: all seven G5 criteria, with G5.7 mechanically verified by TestARunningProcessRebuildsItsStackFromPostgreSQLOnStartup, which compiles services/control-plane/cmd/control-plane, seeds a model, an audit trail and a revocation through the real write paths, runs the binary as a separate OS process, and asserts over HTTP that it recovered them from PostgreSQL. The entrypoint also fails closed, which is asserted rather than assumed: a registry that cannot be corroborated against the rehydrated audit chain produces exit code 2 and nothing listening. Two limits are recorded rather than smoothed over. The process exposes no write path, because audit records reach storage through a caller-driven accept-then-export pair that no background loop can substitute for, so /readyz reports write_path_exposed as false. The graceful shutdown drain was, when this note was first written, unproven on Windows, where os.Process.Signal does not deliver os.Interrupt to another process, and was exercised only by an operator's actual shutdown. That limit no longer holds. serve() now takes its interrupt channel as a parameter, so a test can drive the drain directly rather than signalling another process, and the drain is proven on every platform: an in-flight request is still answered after the interrupt and is answered completely rather than truncated, new requests are refused, the shutdown deadline is honoured instead of waiting on a stuck handler, and a failed listener is reported as an unexpected stop with exit 1. The tests are in services/control-plane/cmd/control-plane/main_test.go, they exercise a real listener and a real HTTP request, and the extraction that made them reachable changed no production behaviour. The tests were themselves mutation-checked: replacing the graceful Shutdown with a hard Close fails two of them. Cross-store atomicity between a registry write and its audit record remains WI-120 and WI-121's and is not claimed by this item. The earlier correction stands and is not repeated: WI-141 is a G5 item, G4 belongs to WI-140, and the stale 'human G4 review' phrasing in this note and in EV-053 through EV-056 was corrected by EV-057 because the evidence log is append-only. One correction supersedes part of EV-062 and EV-063 rather than their conclusions: both state that the integration suite passed, and it did not run. Both were invoked with TEST_DATABASE_URL set while the harness in integration/harness_test.go reads DATABASE_URL, so every test took its skip branch, and go test printed ok and exited 0 over seventeen skips. The suite against a live PostgreSQL 17.11 is 17 passed, 0 failed, 0 skipped, so G5.7's conclusion stands and only the description of the run was wrong; EV-064 records the correction, because the ledger is append-only and a quiet rewrite would be indistinguishable from the error it corrects. The CI integration job now fails loudly if DATABASE_URL is absent or the database is unreachable, so the invariant the harness comment had been asserting in prose is enforced. The item remains IN_PROGRESS because the G5 report's human_reviewer is null and the project reserves a named human sign-off, not because G5 evidence is incomplete. The work is committed as 758ce11 and every step of both CI job sequences passes against the committed tree, including sqlc is up to date, which was the last red step in the workflow and went green because the regenerated output and its callers are now both committed rather than untracked."
     },
     {
       "id": "WI-142",
@@ -773,7 +774,7 @@
         "No direct database access, no broker credentials, no order submission outside the Go API",
         "Keyboard navigable, accessible semantics, contrast compliant; locale formatting never alters canonical values"
       ],
-      "source": "docs/02, docs/11 G7, docs/25 \u00c2\u00a75",
+      "source": "docs/02, docs/11 G7, docs/25 Â§5",
       "dependencies": [
         "WI-118",
         "WI-115",
@@ -793,7 +794,7 @@
         "Global and scoped halt controls exposed with explicit re-enable approval",
         "Halt precedence is visible to the operator"
       ],
-      "source": "docs/11 G7, docs/25 \u00c2\u00a75",
+      "source": "docs/11 G7, docs/25 Â§5",
       "dependencies": [
         "WI-150",
         "WI-117"
@@ -853,7 +854,7 @@
         "Baseline and burst tests pass with queue recovery, database headroom, bounded concurrency",
         "Saturation behavior sheds non-authoritative workloads first while preserving risk, OMS, ledger, audit, and halt capability"
       ],
-      "source": "docs/08, docs/19, docs/25 \u00c2\u00a76",
+      "source": "docs/08, docs/19, docs/25 Â§6",
       "dependencies": [
         "WI-131"
       ],
@@ -893,7 +894,7 @@
         "Alert simulation, dashboard review, sensitive-data scan pass",
         "Telemetry outage does not disable preservation of mandatory security and financial evidence"
       ],
-      "source": "docs/08, docs/01 \u00c2\u00a710, docs/25 \u00c2\u00a75",
+      "source": "docs/08, docs/01 Â§10, docs/25 Â§5",
       "dependencies": [
         "WI-160"
       ],
@@ -933,11 +934,11 @@
       "gate": "G10",
       "acceptance_criteria": [
         "All prior gates pass",
-        "Release evidence contains all 10 required elements of docs/25 \u00c2\u00a78",
+        "Release evidence contains all 10 required elements of docs/25 Â§8",
         "Capacity targets pass; rollback verified; operational ownership assigned for every service",
         "Missing, stale, unverifiable, or contradictory evidence is a release failure"
       ],
-      "source": "docs/25 \u00c2\u00a78, docs/11 G10, docs/24",
+      "source": "docs/25 Â§8, docs/11 G10, docs/24",
       "dependencies": [
         "WI-160",
         "WI-161",
