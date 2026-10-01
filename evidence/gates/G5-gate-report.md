@@ -72,7 +72,7 @@ Mechanically established against a real OS process and a real PostgreSQL 17.11. 
 
 ## Evidence artifacts
 
-88 files, 1077247 bytes, digest `sha256`.
+88 files, 1084190 bytes, digest `sha256`.
 
 Every path is relative to the repository root and every digest is over the exact bytes at the commit above. A criterion cannot be re-verified without these.
 
@@ -87,8 +87,8 @@ Every path is relative to the repository root and every digest is over the exact
 | `services/control-plane/audit/checkpoint_test.go` | `8233919582d28a4daecaff54751ebf2571ccd8a528b186e1ae32b1f7aaf8b3f7` | 7858 |
 | `services/control-plane/audit/doc.go` | `e29d3b71d05985c5a0a93d589a0bbd38bb23ebdc29bca3b9cd5165fa0c22ab00` | 1757 |
 | `services/control-plane/audit/errors.go` | `305aa945b5debde85023d7aa9baf162877fac9e2d515a1985d12183cfc8831ee` | 4367 |
-| `services/control-plane/audit/guard.go` | `f76b015783bc5b78e0374a2d6ba1614ae5d28b11b146a2d6af0869caa2bd60d9` | 8369 |
-| `services/control-plane/audit/guard_test.go` | `248dc74eaf933ee442626fc55b27a4e1b3dbe078b86ff587f865a16033a94b68` | 7613 |
+| `services/control-plane/audit/guard.go` | `ca122ce4519258a878d038737c97523ba578f511f7f72c8e5c08fede979fbe87` | 10926 |
+| `services/control-plane/audit/guard_test.go` | `08e53326eb68552a42fe014b6b0fba629378501cf957ba343e25241f20934365` | 11999 |
 | `services/control-plane/audit/keys.go` | `435dedefb60dc2438cb2da54810eb876c6df4b32b6f48ee9fe8b88fe632d0579` | 8806 |
 | `services/control-plane/audit/migration_contract_test.go` | `dffa964a77a4107c2184f08d0c37c200677dc282d55c91deaed56300e539a6ef` | 6982 |
 | `services/control-plane/audit/reader.go` | `d8ee9654096fab567125f8e0009772330a43223b03f5f35561137bab8469d10b` | 16916 |

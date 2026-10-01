@@ -95,6 +95,120 @@ func TestAHaltIsNotReplacedByASecondHalt(t *testing.T) {
 	}
 }
 
+// An integrity failure arriving after a backlog halt must be surfaced, not discarded.
+//
+// This is the case that made the latch itself the defect. A backlog halt records
+// EVIDENCE_BACKLOG; a chain break arriving afterwards called Halt, which returned because
+// the guard was already latched. Reason() went on reporting the backlog, and once the
+// backlog drained, Clear's precondition was satisfied and the latch was released - so the
+// chain break was detected, never surfaced, and cleared away by an operator who was told
+// the halt was about export lag.
+func TestASev1FindingIsNotMaskedByAnEarlierBacklogHalt(t *testing.T) {
+	g, err := NewGuard(2)
+	if err != nil {
+		t.Fatalf("NewGuard: %v", err)
+	}
+	// Fill the backlog so the overflow refusal raises the first halt.
+	if err := g.Accept(2); err != nil {
+		t.Fatalf("Accept: %v", err)
+	}
+	if err := g.Accept(1); err == nil {
+		t.Fatal("exceeding the limit must be refused")
+	}
+	cause, _ := g.Reason()
+	if cause != causeEvidenceBacklog {
+		t.Fatalf("expected the first halt to be the backlog, got %q", cause)
+	}
+
+	// Drain the backlog, which is what used to make the integrity finding unrecoverable.
+	if err := g.Exported(2); err != nil {
+		t.Fatalf("Exported: %v", err)
+	}
+
+	g.ObserveVerification(Verification{
+		OK:       false,
+		Findings: []Finding{{Kind: FindingTamper, Partition: "tenant-a", Sequence: 3, Detail: "altered"}},
+	})
+
+	cause, reason := g.Reason()
+	if cause != causeSev1Integrity {
+		t.Fatalf("a chain break after a backlog halt must be reported as %q, got %q - the finding "+
+			"was masked by the earlier halt and would be cleared away unreviewed",
+			causeSev1Integrity, cause)
+	}
+	if !strings.Contains(reason, string(FindingTamper)) {
+		t.Fatalf("the reason must name the finding that was detected, got %q", reason)
+	}
+	if err := g.Allow(OpRiskIncreasing); err == nil {
+		t.Fatal("risk-increasing work must stay blocked until the finding is reviewed and cleared")
+	}
+}
+
+// The escalation must not become a way to clear while evidence is still unexported.
+//
+// An integrity halt is deliberately clearable regardless of the backlog, so raising the
+// cause while a backlog is outstanding hands the operator a clear that the backlog case
+// would have refused. That is acceptable only because the backlog stays bounded elsewhere:
+// Accept refuses once the limit is reached, so releasing the latch cannot cause a drop.
+func TestEscalatingToIntegrityStillLeavesTheBacklogBounded(t *testing.T) {
+	g, err := NewGuard(2)
+	if err != nil {
+		t.Fatalf("NewGuard: %v", err)
+	}
+	if err := g.Accept(2); err != nil {
+		t.Fatalf("Accept: %v", err)
+	}
+	if err := g.Accept(1); err == nil {
+		t.Fatal("exceeding the limit must be refused")
+	}
+	g.ObserveVerification(Verification{
+		OK:       false,
+		Findings: []Finding{{Kind: FindingReorder, Partition: "tenant-a", Sequence: 9}},
+	})
+
+	cause, _ := g.Reason()
+	if cause != causeSev1Integrity {
+		t.Fatalf("expected the cause to escalate to %q, got %q", causeSev1Integrity, cause)
+	}
+	// The backlog is untouched by the escalation, and still refuses work once it is full.
+	if got := g.Pending(); got != 2 {
+		t.Fatalf("the escalation must not alter the backlog, pending is %d, expected 2", got)
+	}
+	if err := g.Accept(1); err == nil {
+		t.Fatal("a full backlog must still refuse work after the cause escalated")
+	}
+}
+
+// The escalation is one-directional. A chain break already recorded must not be
+// downgraded to a backlog, or the integrity finding would become clearable on backlog
+// terms and would then be blocked by a backlog that was never the problem.
+func TestAnIntegrityHaltIsNotDowngradedByALaterBacklogHalt(t *testing.T) {
+	g, err := NewGuard(2)
+	if err != nil {
+		t.Fatalf("NewGuard: %v", err)
+	}
+	g.ObserveVerification(Verification{
+		OK:       false,
+		Findings: []Finding{{Kind: FindingSignature, Partition: "tenant-a", Sequence: 4}},
+	})
+	// A backlog halt follows, from a full buffer.
+	if err := g.Accept(2); err != nil {
+		t.Fatalf("Accept: %v", err)
+	}
+	if err := g.Accept(1); err == nil {
+		t.Fatal("exceeding the limit must be refused")
+	}
+
+	cause, _ := g.Reason()
+	if cause != causeSev1Integrity {
+		t.Fatalf("a recorded chain break must not be downgraded to %q, got %q",
+			causeEvidenceBacklog, cause)
+	}
+	if err := g.Allow(OpPrivilegedMutation); err == nil {
+		t.Fatal("privileged mutations must stay blocked on a recorded chain break")
+	}
+}
+
 // A SEV-1 integrity failure must stop trading even when the buffer is empty. A clean
 // backlog says nothing about whether the evidence already written is intact.
 func TestASev1VerificationFailureHaltsEvenWithAnEmptyBacklog(t *testing.T) {

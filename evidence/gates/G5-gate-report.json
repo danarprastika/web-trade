@@ -71,7 +71,7 @@
   "evidence_artifacts": {
     "hash": "sha256",
     "count": 88,
-    "total_bytes": 1077247,
+    "total_bytes": 1084190,
     "note": "Every path is relative to the repository root and every digest is over the exact bytes at the commit above. A criterion cannot be re-verified without these.",
     "artifacts": [
       {
@@ -121,13 +121,13 @@
       },
       {
         "path": "services/control-plane/audit/guard.go",
-        "sha256": "f76b015783bc5b78e0374a2d6ba1614ae5d28b11b146a2d6af0869caa2bd60d9",
-        "bytes": 8369
+        "sha256": "ca122ce4519258a878d038737c97523ba578f511f7f72c8e5c08fede979fbe87",
+        "bytes": 10926
       },
       {
         "path": "services/control-plane/audit/guard_test.go",
-        "sha256": "248dc74eaf933ee442626fc55b27a4e1b3dbe078b86ff587f865a16033a94b68",
-        "bytes": 7613
+        "sha256": "08e53326eb68552a42fe014b6b0fba629378501cf957ba343e25241f20934365",
+        "bytes": 11999
       },
       {
         "path": "services/control-plane/audit/keys.go",

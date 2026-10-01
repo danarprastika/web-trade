@@ -17,6 +17,12 @@ type OperationClass string
 // cause into a check that never fires.
 const causeEvidenceBacklog = "EVIDENCE_BACKLOG"
 
+// causeSev1Integrity names the halt raised when audit chain verification found a break.
+// It is a constant for the same reason as causeEvidenceBacklog: Halt escalates on it and
+// the test sites construct it by hand, so a typo in either place would silently turn a
+// check on the cause into a check that never fires.
+const causeSev1Integrity = "SEV-1_AUDIT_INTEGRITY"
+
 const (
 	// OpReadOnly reads state and changes nothing.
 	OpReadOnly OperationClass = "READ_ONLY"
@@ -106,13 +112,39 @@ func (g *Guard) Exported(n int) error {
 }
 
 // Halt latches the guard. Once latched it stays latched until Cleared.
+//
+// The first cause normally wins, so a second halt cannot quietly rewrite the reason an
+// operator was given. There is one exception, and it is a safety one: a SEV-1 integrity
+// failure supersedes an evidence-backlog halt already recorded.
+//
+// Without that exception the two causes together were worse than either alone. A backlog
+// halt sets cause to EVIDENCE_BACKLOG; a chain break arriving afterwards called Halt, which
+// returned because the guard was already latched, and the finding was discarded. Reason()
+// went on reporting the backlog. Once the backlog drained, Clear's precondition was
+// satisfied and the latch was released - so an operator cleared a system with a detected
+// chain break in it, and the only record that the break had ever been seen was a halt
+// reason that had been overwritten before anyone read it. Detection existed; nothing
+// surfaced it. That is the failure mode a latched control exists to prevent, reached
+// through the latch itself.
+//
+// The backlog cause is superseded rather than merged because the integrity finding is what
+// an operator has to review, and Clear already treats an integrity halt as clearable once
+// that review has happened. Nothing is lost: the backlog stays bounded by Accept refusing
+// when it is full, so releasing the latch cannot cause a drop, and Pending still reports
+// what is outstanding. The reverse order is deliberately not escalated - a chain break
+// already recorded must not be downgraded to a backlog.
 func (g *Guard) Halt(cause, reason string) {
-	if g.halted {
+	if g.halted && !g.haltCauseEscalatesTo(cause) {
 		return
 	}
 	g.halted = true
 	g.haltCause = cause
 	g.haltReason = reason
+}
+
+// haltCauseEscalatesTo reports whether cause must replace the cause already recorded.
+func (g *Guard) haltCauseEscalatesTo(cause string) bool {
+	return g.haltCause == causeEvidenceBacklog && cause == causeSev1Integrity
 }
 
 // Clear releases the latch.
@@ -136,6 +168,12 @@ func (g *Guard) Halt(cause, reason string) {
 // means a chain break was detected; the backlog is not the concern, and an operator
 // clearing it after reviewing the finding must not additionally be told to go and fix an
 // unrelated export backlog.
+//
+// It reads the cause that is currently recorded, which is not always the first one raised:
+// Halt escalates a backlog halt to the integrity cause when a chain break follows it. That
+// combination therefore clears on the integrity terms rather than the backlog terms, which
+// is the intended reading - the finding an operator must review is the chain break, and the
+// backlog is still bounded by Accept refusing once it is full.
 func (g *Guard) Clear() error {
 	if !g.halted {
 		return nil
@@ -186,7 +224,7 @@ func (g *Guard) ObserveVerification(v Verification) {
 	for _, f := range v.Findings {
 		kinds = append(kinds, string(f.Kind))
 	}
-	g.Halt("SEV-1_AUDIT_INTEGRITY",
+	g.Halt(causeSev1Integrity,
 		"audit integrity verification failed: "+joinKinds(kinds))
 }
 
