@@ -13,6 +13,15 @@ where the step would have failed on the runner before reaching any of its logic.
 It is a separate script rather than a test because it needs bash, which a Windows test run may not
 have, and because failing to find bash is a skip rather than a pass: a check that silently stops
 running is the failure mode this repository keeps recording.
+
+The gate refuses to pass when it finds nothing. A workflow whose jobs were emptied, whose steps
+were renamed to `uses`, or which was edited into a mapping with no `run:` key at all, would
+otherwise produce "PASS (0 run: blocks parsed)" - a green check that had examined nothing, and
+therefore a green check that could not have found the syntax error it exists to find. The pytest
+twin in tests/ci/test_ci_workflow.py already refused that case; this did not, which meant the
+standalone CI step only failed closed as long as a sibling step happened to run first. Both now
+take the rule from VACUITY below, so the two copies cannot drift apart on the one thing that
+matters.
 """
 
 from __future__ import annotations
@@ -20,12 +29,93 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+
+# The non-vacuity rule, as a constant, because it now has two callers: this script and the pytest
+# twin. It is not restated in either. The twin used to carry its own copy of this assertion, and
+# two copies of a rule is one more edit than it takes for them to disagree about whether an empty
+# workflow is a failure - at which point the standalone CI step is green for having read nothing.
+VACUITY = "no run: blocks were found; the check is not examining anything"
+
+
+@dataclass(frozen=True)
+class RunBlock:
+    """One `run:` step, with enough context to name it in a failure message."""
+
+    job: str
+    label: str
+    script: str
+
+
+def collect_run_blocks(workflow: object) -> list[RunBlock]:
+    """Every non-empty `run:` block in a parsed workflow, in file order.
+
+    This is the single definition of what this gate examines, and it lives here rather than in
+    both callers because the two are copies of one check: the pytest twin exists because a
+    workflow GitHub cannot parse does not run its own CI step, so the same parse has to happen
+    before the push as well as in it. Duplicated, the two would drift, and the drift that matters
+    is in the non-vacuity guard in main() rather than in this loop.
+
+    Anything that is not the expected shape - a workflow that parses to a list, a job that is not
+    a mapping, a step with no script - yields no blocks rather than raising. That is deliberate:
+    this function's job is to describe what there is to check, and a shape it cannot read is a
+    shape whose emptiness the caller must be able to see rather than crash on.
+    """
+    if not isinstance(workflow, dict):
+        return []
+
+    jobs = workflow.get("jobs")
+    if not isinstance(jobs, dict):
+        return []
+
+    blocks: list[RunBlock] = []
+    for job_name, job in jobs.items():
+        if not isinstance(job, dict):
+            continue
+        steps = job.get("steps")
+        if not isinstance(steps, list):
+            continue
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+            script = step.get("run")
+            if not isinstance(script, str) or not script.strip():
+                continue
+            label = step.get("name") or step.get("uses") or "(unnamed step)"
+            blocks.append(RunBlock(job=str(job_name), label=str(label), script=script))
+    return blocks
+
+
+def bash_syntax_check(script: str) -> subprocess.CompletedProcess[bytes]:
+    """`bash -n` over one block, without executing any of it.
+
+    The script is piped to bash on stdin as bytes rather than as text, and rather than written to
+    a temp file. Both of those details are load-bearing, and both were wrong in the first version
+    of this check:
+
+      A temp path is wrong on Windows, because the bash on PATH is the WSL bash, which cannot see
+      a C:\\... path and reads the backslashes as escapes. Every block then failed with "No such
+      file or directory" and the gate reported a broken workflow when the workflow was fine.
+
+      A text-mode pipe is wrong on Windows for the opposite reason: Python translates "\\n" to
+      "\\r\\n" on the way in, so bash receives carriage returns that it reads as part of the
+      command. That produced nine phantom syntax errors - `done < modules.txt` and a stray $'\\r'
+      - for a workflow whose run: blocks are all valid, and whose .gitattributes already pins
+      *.yml to LF precisely so this cannot happen on the runner. Binary stdin removes the
+      translation entirely.
+
+    Both failures were the same error as the ones this repository keeps recording: a check
+    reporting failure that established nothing about the thing it claimed to check, found only
+    because the result was doubted and the cause established.
+    """
+    body = script if script.lstrip().startswith("#!") else "#!/usr/bin/env bash\n" + script
+    return subprocess.run(["bash", "-n"], input=body.encode("utf-8"), capture_output=True)
 
 
 def main() -> int:
@@ -34,54 +124,33 @@ def main() -> int:
         return 0
 
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+
+    blocks = collect_run_blocks(workflow)
+    # Refused before any block is parsed, so this is not reachable by a syntax error being counted
+    # as the failure. A gate that finds nothing has not verified that the workflow's bash is valid;
+    # it has verified that it could not look, and saying PASS would turn the difference invisible.
+    if not blocks:
+        print(f"::error::{VACUITY}")
+        print(f"::error::{WORKFLOW} parsed but yielded no run: blocks, so no bash was checked; "
+              "failing rather than passing vacuously")
+        return 1
+
     failures = 0
-    checked = 0
 
-    for job_name, job in (workflow.get("jobs") or {}).items():
-        for step in job.get("steps") or []:
-            script = step.get("run")
-            if not isinstance(script, str) or not script.strip():
-                continue
-
-            label = step.get("name") or step.get("uses") or "(unnamed step)"
-            checked += 1
-
-            # The script is piped to bash on stdin as bytes rather than as text, and rather than
-            # written to a temp file. Both of those details are load-bearing, and both were wrong
-            # in the first version of this check:
-            #
-            #   A temp path is wrong on Windows, because the bash on PATH is the WSL bash, which
-            #   cannot see a C:\... path and reads the backslashes as escapes. Every block then
-            #   failed with "No such file or directory" and the gate reported a broken workflow
-            #   when the workflow was fine.
-            #
-            #   A text-mode pipe is wrong on Windows for the opposite reason: Python translates
-            #   "\n" to "\r\n" on the way in, so bash receives carriage returns that it reads as
-            #   part of the command. That produced nine phantom syntax errors - `done < modules.txt`
-            #   and a stray $'\r' - for a workflow whose run: blocks are all valid, and whose
-            #   .gitattributes already pins *.yml to LF precisely so this cannot happen on the
-            #   runner. Binary stdin removes the translation entirely.
-            #
-            # Both failures were the same error as the ones this repository keeps recording: a
-            # check reporting failure that established nothing about the thing it claimed to
-            # check, found only because the result was doubted and the cause established.
-            body = script if script.lstrip().startswith("#!") else "#!/usr/bin/env bash\n" + script
-
-            result = subprocess.run(
-                ["bash", "-n"], input=body.encode("utf-8"), capture_output=True
-            )
-            if result.returncode == 0:
-                print(f"  [ok]   {job_name}: {label}")
-            else:
-                failures += 1
-                print(f"  [FAIL] {job_name}: {label}")
-                print("         " + (result.stderr.decode("utf-8", "replace").strip() or "syntax error"))
+    for block in blocks:
+        result = bash_syntax_check(block.script)
+        if result.returncode == 0:
+            print(f"  [ok]   {block.job}: {block.label}")
+        else:
+            failures += 1
+            print(f"  [FAIL] {block.job}: {block.label}")
+            print("         " + (result.stderr.decode("utf-8", "replace").strip() or "syntax error"))
 
     print()
     if failures:
-        print(f"::error::{failures} of {checked} run: block(s) are not valid bash")
+        print(f"::error::{failures} of {len(blocks)} run: block(s) are not valid bash")
         return 1
-    print(f"bash syntax gate: PASS ({checked} run: blocks parsed)")
+    print(f"bash syntax gate: PASS ({len(blocks)} run: blocks parsed)")
     return 0
 
 

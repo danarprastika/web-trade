@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"errors"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -48,7 +49,8 @@ func restart(t *testing.T, store SnapshotReader, stored []audit.Record) *Journal
 	if err := chain.Restore(stored); err != nil {
 		t.Fatalf("restoring the chain: %v", err)
 	}
-	j, err := RehydratedJournal(chain, func() time.Time { return epoch }, "test", nil, store)
+	ctx := context.Background()
+	j, err := RehydratedJournal(ctx, chain, func() time.Time { return epoch }, "test", nil, store)
 	if err != nil {
 		t.Fatalf("RehydratedJournal: %v", err)
 	}
@@ -309,13 +311,14 @@ func TestLoadSnapshotPropagatesAReadFailure(t *testing.T) {
 
 func TestRehydratedJournalGuards(t *testing.T) {
 	store := NewMemoryStore()
-	if _, err := RehydratedJournal(audit.NewChain(), func() time.Time { return epoch }, "test", store, nil); err == nil {
+	ctx := context.Background()
+	if _, err := RehydratedJournal(ctx, audit.NewChain(), func() time.Time { return epoch }, "test", store, nil); err == nil {
 		t.Fatal("rehydrating without a reader would produce an empty journal, which is " +
 			"indistinguishable from a registry that has never been written")
 	}
 	want := errors.New("registry unavailable")
 	store.FailReads(want)
-	if _, err := RehydratedJournal(audit.NewChain(), func() time.Time { return epoch }, "test", store, store); !errors.Is(err, want) {
+	if _, err := RehydratedJournal(ctx, audit.NewChain(), func() time.Time { return epoch }, "test", store, store); !errors.Is(err, want) {
 		t.Fatalf("a failed load must be returned rather than producing an empty journal, got %v", err)
 	}
 	// A chain that was never restored fails corroboration rather than loading nothing, and
@@ -325,14 +328,14 @@ func TestRehydratedJournalGuards(t *testing.T) {
 	populated := NewMemoryStore()
 	j, chain := journalWithStore(t, populated)
 	registeredModelN(t, j, 3)
-	if _, err := RehydratedJournal(audit.NewChain(), func() time.Time { return epoch }, "test",
+	if _, err := RehydratedJournal(ctx, audit.NewChain(), func() time.Time { return epoch }, "test",
 		populated, populated); err == nil ||
 		!strings.Contains(err.Error(), "not in the chain") {
 		t.Fatalf("restoring against an unrestored chain should report missing evidence, got %v", err)
 	}
 	// And the same store restores cleanly once the chain is present, which is what makes the
 	// refusal a statement about the chain rather than about the registry.
-	if _, err := RehydratedJournal(chain, func() time.Time { return epoch }, "test",
+	if _, err := RehydratedJournal(ctx, chain, func() time.Time { return epoch }, "test",
 		populated, populated); err != nil {
 		t.Fatalf("restoring with the chain present must succeed: %v", err)
 	}
@@ -468,22 +471,38 @@ type fakeSnapshotQuerier struct {
 	models []dbgen.ModelRegistry
 	ledger map[string][]dbgen.ModelTransitionIdempotency
 	err    error
+	calls  int
 }
 
 func (q *fakeSnapshotQuerier) ListAllModels(context.Context) ([]dbgen.ModelRegistry, error) {
+	q.calls++
 	if q.err != nil {
 		return nil, q.err
 	}
 	return q.models, nil
 }
 
-func (q *fakeSnapshotQuerier) ListIdempotencyForModel(
-	_ context.Context, modelID string,
+// ListAllIdempotency flattens the per-model map the fake was built with. The keys are walked in
+// sorted order rather than map order so a failure in a test that inspects call order is not
+// itself a coin toss; sortSnapshot normalises the snapshot regardless, so this is about the
+// test's own legibility rather than about determinism the reader depends on.
+func (q *fakeSnapshotQuerier) ListAllIdempotency(
+	_ context.Context,
 ) ([]dbgen.ModelTransitionIdempotency, error) {
+	q.calls++
 	if q.err != nil {
 		return nil, q.err
 	}
-	return q.ledger[modelID], nil
+	keys := make([]string, 0, len(q.ledger))
+	for k := range q.ledger {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var all []dbgen.ModelTransitionIdempotency
+	for _, k := range keys {
+		all = append(all, q.ledger[k]...)
+	}
+	return all, nil
 }
 
 // These two cover the intersection EV-054 recorded as resting on a probe that was deleted:

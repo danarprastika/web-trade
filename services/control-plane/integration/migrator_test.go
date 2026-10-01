@@ -43,8 +43,15 @@ func migrationFS(t *testing.T) fs.FS {
 // This is the property the Python rehearsal proves, and it is reproduced here through the Go
 // store because the rehearsal deliberately does not exercise Go code. Running both is the
 // point: the rehearsal covers the SQL, and this covers the transaction discipline around it.
+//
+// It connects through openDestructive rather than open, because this is the one test in the
+// package that runs an unbounded down run: two of them, against the real bodies, which drop
+// schema ledger CASCADE along with the audit, authz and model_registry tables. Against
+// DATABASE_URL pointing at a real database that is four schemas of somebody's data, deleted
+// because a developer typed a DSN and ran the suite. openDestructive refuses such a target
+// before any statement runs, and refuses it by failing rather than by skipping.
 func TestMigratorAppliesRevertsAndReappliesTheRealSet(t *testing.T) {
-	db := open(t)
+	db := openDestructive(t)
 	ctx := ctxFor(t)
 
 	set, err := migrate.Parse(migrationFS(t))
@@ -65,6 +72,8 @@ func TestMigratorAppliesRevertsAndReappliesTheRealSet(t *testing.T) {
 	}
 
 	reset := &migrate.Runner{Set: set, Store: store, Out: os.Stderr}
+	// Unbounded, and destructive by construction: every applied migration is reverted whatever
+	// the DSN turned out to name. openDestructive above is what makes that acceptable here.
 	if _, err := reset.Run(ctx, migrate.Down); err != nil {
 		t.Fatalf("resetting the catalog to empty: %v", err)
 	}

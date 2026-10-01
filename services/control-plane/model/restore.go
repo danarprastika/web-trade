@@ -76,11 +76,21 @@ func (j *Journal) Restore(snapshot Snapshot) error {
 					"contain; a transition cannot be replayed for a model that is not registered",
 				entry.ModelID)
 		}
+		trans, ok := TransitionFor(entry.From, entry.To)
+		if !ok {
+			return reject(contracts.CodeInternal, ErrIncompleteRecord,
+				"the snapshot records a transition %s -> %s for model %s that is not declared in the lifecycle",
+				entry.From, entry.To, entry.ModelID)
+		}
 		applied[key] = appliedTransition{
 			fingerprint: entry.Fingerprint,
 			outcome: Outcome{
-				AuditRecord: entry.AuditID,
-				Transition:  Transition{From: entry.From, To: entry.To},
+				ModelID:          entry.ModelID,
+				Transition:       trans,
+				EventType:        trans.EventType,
+				AuditRecord:      entry.AuditID,
+				IdempotencyScope: trans.IdempotencyScope,
+				FailureBehavior:  trans.FailureBehavior,
 			},
 		}
 	}
@@ -145,6 +155,7 @@ func (j *Journal) verifyAgainstChain(model ModelSnapshot) error {
 // restored against an empty chain would fail every model's corroboration check, which is
 // correct but not informative, so the check below names the likely cause.
 func RehydratedJournal(
+	ctx context.Context,
 	chain *audit.Chain,
 	clock func() time.Time,
 	environment string,
@@ -160,7 +171,7 @@ func RehydratedJournal(
 			"rehydrating a journal needs a snapshot reader; without one the journal would be "+
 				"empty, which is indistinguishable from a registry that has never been written")
 	}
-	snapshot, err := reader.LoadSnapshot(context.Background())
+	snapshot, err := reader.LoadSnapshot(ctx)
 	if err != nil {
 		return nil, err
 	}

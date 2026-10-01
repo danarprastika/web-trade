@@ -70,8 +70,8 @@
   ],
   "evidence_artifacts": {
     "hash": "sha256",
-    "count": 80,
-    "total_bytes": 900657,
+    "count": 87,
+    "total_bytes": 1034522,
     "note": "Every path is relative to the repository root and every digest is over the exact bytes at the commit above. A criterion cannot be re-verified without these.",
     "artifacts": [
       {
@@ -85,14 +85,19 @@
         "bytes": 23043
       },
       {
+        "path": "services/control-plane/audit/anchor_test.go",
+        "sha256": "01a7715670311388a597adf1c2fbe17ff03fe2a2a01cab6a189c1f606b530865",
+        "bytes": 15997
+      },
+      {
         "path": "services/control-plane/audit/chain.go",
-        "sha256": "9ff1f47f0526992eb189a15a471e4dedb9361a24077d13fec7cf3ae31a3584f3",
-        "bytes": 8179
+        "sha256": "5e703062fd2910db6673aecac189090facddf0cc5b676aee8b717c3d14e3cb20",
+        "bytes": 9549
       },
       {
         "path": "services/control-plane/audit/chain_test.go",
-        "sha256": "abb2e594966c668837714146e3d58f9416726ca08ac43812209c81e0292e6525",
-        "bytes": 8302
+        "sha256": "a19f009ff13dbddf4d97ea5e059b6929ab92a7d0cc8f5d9976036e43980b962f",
+        "bytes": 11284
       },
       {
         "path": "services/control-plane/audit/checkpoint.go",
@@ -136,13 +141,13 @@
       },
       {
         "path": "services/control-plane/audit/reader.go",
-        "sha256": "b98ef2802b4fa4a21a099c069f3ea7214132c25101fc2948655957c50310f7c7",
-        "bytes": 9908
+        "sha256": "d8ee9654096fab567125f8e0009772330a43223b03f5f35561137bab8469d10b",
+        "bytes": 16916
       },
       {
         "path": "services/control-plane/audit/reader_path_test.go",
-        "sha256": "494770a2eeb66967844944e1f0d5bcc80bbd72b67b46ce0a5158e0bf2a199798",
-        "bytes": 7856
+        "sha256": "4a99f8c22ebebfdb2220683e925a535cb377da8db2d59efcf45a35238ead0f67",
+        "bytes": 8497
       },
       {
         "path": "services/control-plane/audit/reader_test.go",
@@ -161,8 +166,8 @@
       },
       {
         "path": "services/control-plane/audit/restore.go",
-        "sha256": "3bc2deac02d3fd8bb7b9e9d1037980cc2b920474b8c3255859822352fe131a0b",
-        "bytes": 5160
+        "sha256": "27b85d9c88770c5abce6d185a207be8b84e7d6789cc0af8b875ff53120bb06a8",
+        "bytes": 9962
       },
       {
         "path": "services/control-plane/audit/restore_test.go",
@@ -196,8 +201,8 @@
       },
       {
         "path": "services/control-plane/bootstrap/bootstrap.go",
-        "sha256": "c88b470b97d7d72e71ff8ce92d47054f8a9f73e21a0aa9a785e41c317378ed1d",
-        "bytes": 9663
+        "sha256": "8ca4e59d452ce5339e8d619663f8f8aee7f401c8a399049ba8bc2892eee2f508",
+        "bytes": 9673
       },
       {
         "path": "services/control-plane/bootstrap/bootstrap_test.go",
@@ -216,18 +221,23 @@
       },
       {
         "path": "services/control-plane/cmd/migrate/main.go",
-        "sha256": "db60fb60b7020784471363b628655de71afac4d0eaf7dcbdcd25ddfb518a1f3f",
-        "bytes": 6119
+        "sha256": "7e256beb715e8509d5207f1369158a570e88cbd37247c4432ce90b236a71d8f8",
+        "bytes": 8745
+      },
+      {
+        "path": "services/control-plane/cmd/migrate/main_test.go",
+        "sha256": "e8bed87001e2b1c04b6a7a7061e5d6c50a795e85c51eebcef89a572f4332fe8e",
+        "bytes": 15428
       },
       {
         "path": "services/control-plane/db/dbgen/model_registry.sql.go",
-        "sha256": "f31b4db443b86aa294a72617aed2a67a152a022330068a48ad4b34b9dd59657f",
-        "bytes": 33348
+        "sha256": "861d197d54d606c089908dc22302531375adc195ed816198539646b552306878",
+        "bytes": 33754
       },
       {
         "path": "services/control-plane/db/queries/model_registry.sql",
-        "sha256": "0a4ee7e70d033951a6207a0da258ba675872f10e972e0204ab53c708890bf8ad",
-        "bytes": 13461
+        "sha256": "91d164b872fb2bdae97bc11219453914e76341ca35aa43d92b916909d6bf5763",
+        "bytes": 13907
       },
       {
         "path": "services/control-plane/go.mod",
@@ -250,14 +260,19 @@
         "bytes": 13547
       },
       {
+        "path": "services/control-plane/integration/destructive_guard_test.go",
+        "sha256": "8e259a02c811925f7b606593fca96225e4db1fbc6a2010f7b164b880cd03d210",
+        "bytes": 12001
+      },
+      {
         "path": "services/control-plane/integration/entrypoint_test.go",
         "sha256": "77d1eaf821e4bbca4eaf76c03f7799d53fdca68f4884ba3e351e7bce63d914d8",
         "bytes": 17974
       },
       {
         "path": "services/control-plane/integration/harness_test.go",
-        "sha256": "8902f690e89ec70b0680768b5da0e6746fb15e2ee3d15e7f1419ab55c4dc6c53",
-        "bytes": 2654
+        "sha256": "7be7599615133ae23f8a9615ec91b9c88bb807bc8ba26cc9ecffdb15bcc1e6bc",
+        "bytes": 13597
       },
       {
         "path": "services/control-plane/integration/identity_test.go",
@@ -266,8 +281,8 @@
       },
       {
         "path": "services/control-plane/integration/migrator_test.go",
-        "sha256": "c4ff49f65941c1d79929b833eaf0ed35370db0dcbd4abdbaddd46327e90359bc",
-        "bytes": 6005
+        "sha256": "f842dc3a7ad27b851b1cb5dde4308e54058c2a513b748311fa79c9ac863c3afc",
+        "bytes": 6742
       },
       {
         "path": "services/control-plane/integration/model_store_test.go",
@@ -280,14 +295,29 @@
         "bytes": 11229
       },
       {
+        "path": "services/control-plane/migrate/live_test.go",
+        "sha256": "4968d75d221d4edfd4360453f291c1eca354fa635a2c611eb4a53606853f142f",
+        "bytes": 13759
+      },
+      {
+        "path": "services/control-plane/migrate/lock_test.go",
+        "sha256": "f386db01558d3fbe9e6fbe8117005366e87ac1b52adcaac7044538ae137f0f33",
+        "bytes": 9021
+      },
+      {
         "path": "services/control-plane/migrate/migrate.go",
-        "sha256": "d992d582a05a6ed7ada5b062eff71f8c118f45ab54e0039cba92fa53651f64e9",
-        "bytes": 13709
+        "sha256": "e27ec916de880e67edc4863b4933614178a48dd2a09ed1459b860b3b9403e34b",
+        "bytes": 17852
       },
       {
         "path": "services/control-plane/migrate/migrate_test.go",
         "sha256": "3484a96ea8003aac8e19b15d06f1680f2058dcc18a742fe2313fefa9363dbc56",
         "bytes": 9988
+      },
+      {
+        "path": "services/control-plane/migrate/plan_target_test.go",
+        "sha256": "af40a5c68abd62a0c4686c5d1982b4da50888c7fe2a89d1891aeac6acce5c196",
+        "bytes": 7112
       },
       {
         "path": "services/control-plane/migrate/real_migrations_test.go",
@@ -296,18 +326,18 @@
       },
       {
         "path": "services/control-plane/migrate/runner.go",
-        "sha256": "bf30f1f451d5636b718e185ac7656616268272623d989f61a2583d0afa1c3ee2",
-        "bytes": 3366
+        "sha256": "5866aee6344bdf967955793366ea4640d3fc79adc2a5c34f3eb5cc44a97723a5",
+        "bytes": 6266
       },
       {
         "path": "services/control-plane/migrate/store.go",
-        "sha256": "d55dfcc7b104db054250c5a5e6f822a9ebf43d498eb87632515be23534c46efe",
-        "bytes": 3221
+        "sha256": "354b3159e2a48342ee56c8c57cea71842c81a6c9c8a7479add83e57cc267c36d",
+        "bytes": 5228
       },
       {
         "path": "services/control-plane/migrate/store_sql.go",
-        "sha256": "f2ea71792cf60d4860a9cdef9b847da0adc7e9e9c0b27f7353f6a2095e25b152",
-        "bytes": 6811
+        "sha256": "0b561116b84b359ec8cead3a363611bdcb9e5b82965c1d8b98b0c44c86b4aac5",
+        "bytes": 12917
       },
       {
         "path": "services/control-plane/migrate/store_sql_test.go",
@@ -351,13 +381,13 @@
       },
       {
         "path": "services/control-plane/model/identity_restore.go",
-        "sha256": "1d97d0c0bd659211abe1cd7cb142b1be81b67528ab529bb89d2d5d199b05adb9",
-        "bytes": 5197
+        "sha256": "ffe38d24bf0b374f6d611cd58addd4423fb387950d29e5665d56ff78da136a19",
+        "bytes": 5202
       },
       {
         "path": "services/control-plane/model/identity_restore_test.go",
-        "sha256": "a2ddb1f8e301ee345a8cc40102be7c0ce152f804323571aa5eb67412525f2a4a",
-        "bytes": 19921
+        "sha256": "a74c7514503e92b02f1fbad012168c2865985652a62cecd9ad6e687230e1564f",
+        "bytes": 21778
       },
       {
         "path": "services/control-plane/model/identity_store.go",
@@ -421,13 +451,13 @@
       },
       {
         "path": "services/control-plane/model/restore.go",
-        "sha256": "805eea736fa86decb7684b16fcb49d1380547de9b764e70622972ef886c610f0",
-        "bytes": 7493
+        "sha256": "15ee03ca92cc3c6edf5f5943011fa3d136bf6567655285ae03cbfd9d201fb8f2",
+        "bytes": 7908
       },
       {
         "path": "services/control-plane/model/restore_test.go",
-        "sha256": "b0b05ac0d2c9909ae457bad6f18351c3f84528b3b4ad0d3ab5c1f973ad0ddb95",
-        "bytes": 23142
+        "sha256": "a38251e30344a8c6f8adf604a6d32b48cd535a12660e7c39a70d0b3fb687c273",
+        "bytes": 23819
       },
       {
         "path": "services/control-plane/model/rollback_test.go",
@@ -441,8 +471,13 @@
       },
       {
         "path": "services/control-plane/model/store_read.go",
-        "sha256": "ac73ed53e4e4bde9c54aa2559900be18d59ce0e538c940b0f4e50ef54f96efca",
-        "bytes": 9280
+        "sha256": "02747ff8c849febde7c85774b88d12a5dcb37d4e8e92a50c10999ae6d50acaec",
+        "bytes": 10816
+      },
+      {
+        "path": "services/control-plane/model/store_read_bulk_test.go",
+        "sha256": "8bf29a6d09a263c3d33f85a16af473643c57a253d3fa421e88e4ba4c8235334c",
+        "bytes": 8930
       },
       {
         "path": "services/control-plane/model/store_sql.go",

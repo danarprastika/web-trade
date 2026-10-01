@@ -26,14 +26,43 @@ import (
 //     a chain that looks usable and is not, and the next append would build on records whose
 //     linkage was never established.
 //   - It verifies as it goes. Each record's hash is recomputed and each link is checked
-//     against the record that precedes it, so a tampered, truncated or reordered archive is
+//     against the record that precedes it, so a tampered, reordered or hole-punched archive is
 //     refused at the point of loading rather than discovered later by a reader who has no way
-//     to tell a silent truncation from a partition that simply ended.
+//     to tell a damaged archive from one that simply ended.
+//
+// What Restore on its own cannot see is a truncation at the tail. A prefix of a hash chain is
+// contiguous, correctly linked and correctly hashed, so a partition whose newest records were
+// deleted restores perfectly and verifies perfectly: there is nothing inside the remaining
+// records that distinguishes them from a partition that was never written that far. Restore
+// therefore refuses a truncated archive only when it is told how far each partition actually
+// went, which is what RestoreAnchored is for and what Rehydrate supplies from the signed
+// checkpoints already in the database.
 //
 // Records are presented in the order they were stored and are never sorted. Sorting would
 // make reordering invisible by construction, which is the same reasoning that keeps the
 // Verifier from normalising its input.
 func (c *Chain) Restore(records []Record) error {
+	return c.restore(records, nil)
+}
+
+// RestoreAnchored restores records and requires each anchored partition to still reach the
+// sequence a signed checkpoint says it reached.
+//
+// The anchors are the durable answer to "how far did this partition go", and they are
+// already there: audit_checkpoints is append-only, signed, and read back through
+// GetLatestAuditCheckpoint. A partition is anchored only when a checkpoint exists for it, so
+// a partition that has never been checkpointed is loaded on the contiguity and linkage checks
+// alone - exactly as Restore loads it.
+//
+// The signature on each anchor is not verified here. This is a consistency check between the
+// archive and the durable boundary it claims to reach; who signed that boundary is the
+// Verifier's question, and it answers it against a key ring rather than trusting whatever the
+// same database holds next to the records.
+func (c *Chain) RestoreAnchored(records []Record, anchors map[string]Checkpoint) error {
+	return c.restore(records, anchors)
+}
+
+func (c *Chain) restore(records []Record, anchors map[string]Checkpoint) error {
 	if len(c.partitions) > 0 || len(c.byAuditID) > 0 || len(c.records) > 0 {
 		return reject(contracts.CodeConflict,
 			"this chain already holds %d partition(s) and %d record(s); restore is only "+
@@ -93,6 +122,54 @@ func (c *Chain) Restore(records []Record) error {
 		ordered[r.Partition] = append(ordered[r.Partition], r)
 	}
 
+	// The anchor check, before anything is committed, so a refusal still leaves the chain
+	// untouched like every other refusal above.
+	//
+	// Everything checked so far is internal consistency, and a truncated archive is
+	// internally consistent: the surviving prefix has no hole, no broken link and no
+	// mis-hashed record. The only thing that can say the partition used to be longer is a
+	// checkpoint signed while the missing records still existed.
+	for partition, anchor := range anchors {
+		ps, presented := staged[partition]
+		if !presented || ps.lastSequence == 0 {
+			return reject(contracts.CodeValidation,
+				"partition %s has a signed checkpoint covering sequences %d..%d but the "+
+					"restore presents no records for it at all; either every record was "+
+					"removed or the checkpoint does not describe this archive",
+				partition, anchor.FirstSequence, anchor.LastSequence)
+		}
+		if ps.lastSequence < anchor.LastSequence {
+			return reject(contracts.CodeValidation,
+				"partition %s ends at sequence %d but a signed checkpoint covers it through "+
+					"sequence %d; %d record(s) are missing from the end of the archive. A "+
+					"prefix of a hash chain is contiguous and correctly linked, so without "+
+					"this checkpoint the restore would have succeeded and reported a verified "+
+					"chain over evidence that is gone",
+				partition, ps.lastSequence, anchor.LastSequence,
+				anchor.LastSequence-ps.lastSequence)
+		}
+		// Reaching the anchored sequence is not enough; the record there has to be the one
+		// that was signed. A chain rebuilt from sequence 1 with different content can land
+		// on the right sequence number and would otherwise pass this check.
+		//
+		// The anchor's FirstSequence is deliberately not compared. Contiguity from sequence
+		// 1, checked above, already proves that every record before it is present, so a
+		// comparison here could not fail for any reason the earlier check has not covered -
+		// and a check that cannot fail is not a check.
+		head, atHead := recordAt(ordered[partition], anchor.LastSequence)
+		if !atHead {
+			return reject(contracts.CodeValidation,
+				"partition %s presents no record at sequence %d, which its signed checkpoint "+
+					"covers", partition, anchor.LastSequence)
+		}
+		if head.RecordHash != anchor.LastHash {
+			return reject(contracts.CodeValidation,
+				"the record at sequence %d in partition %s does not hash to the last_hash of "+
+					"the signed checkpoint covering it; the archive reaching this sequence is "+
+					"not the one that was signed", anchor.LastSequence, partition)
+		}
+	}
+
 	// Commit. Nothing above mutated the chain, so this is the first point at which it
 	// changes at all.
 	for partition, ps := range staged {
@@ -106,4 +183,18 @@ func (c *Chain) Restore(records []Record) error {
 		c.records[partition] = rs
 	}
 	return nil
+}
+
+// recordAt returns the record at an exact sequence.
+//
+// The restore order is already checked for contiguity, so a miss here means the anchor names
+// a sequence outside the archive rather than a record that was skipped - and either way the
+// answer is the same: the archive does not cover what the checkpoint says it covers.
+func recordAt(records []Record, sequence int64) (Record, bool) {
+	for _, r := range records {
+		if r.Sequence == sequence {
+			return r, true
+		}
+	}
+	return Record{}, false
 }

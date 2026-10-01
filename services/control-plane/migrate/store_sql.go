@@ -3,8 +3,10 @@ package migrate
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
 	"regexp"
+	"time"
 )
 
 // SQLStore is the Store backed by a real PostgreSQL database.
@@ -62,6 +64,30 @@ func (s *SQLStore) Applied(ctx context.Context) (map[int]string, error) {
 		return nil, fmt.Errorf("%w: the applied-set scan ended early: %v", ErrStore, err)
 	}
 	return applied, nil
+}
+
+// Status returns the applied set for a read-only report.
+//
+// It is deliberately not Applied. Applied reports a missing applied-set table as an error, and
+// for a report that is the wrong answer: a database nobody has migrated yet has no applied set,
+// and "no migrations applied" is precisely what an operator needs to hear about one. A status
+// query against an uninitialised catalog is a normal state, not a failure.
+//
+// The catalog probe is what makes the whole path read-only. It is tempting to have Status call
+// Ensure first so that Applied always finds a table, and that is exactly the bug: a status run
+// would then issue CREATE SCHEMA and CREATE TABLE against a database it was asked to inspect,
+// which fails on a replica or a read-only connection with an error that says nothing about the
+// migrations. Probing pg_catalog cannot fail that way and changes nothing.
+func (s *SQLStore) Status(ctx context.Context) (map[int]string, error) {
+	var exists bool
+	if err := s.db.QueryRowContext(ctx, appliedSetExistsSQL).Scan(&exists); err != nil {
+		return nil, fmt.Errorf("%w: asking the catalog whether the applied set exists: %v",
+			ErrStore, err)
+	}
+	if !exists {
+		return map[int]string{}, nil
+	}
+	return s.Applied(ctx)
 }
 
 // Record writes a migration as applied.
@@ -159,3 +185,89 @@ func (s *SQLStore) Undo(ctx context.Context, m Migration) error {
 
 // compile-time proof that the store satisfies the interface the runner consumes.
 var _ Store = (*SQLStore)(nil)
+
+// advisoryLockKey is the key every instance of this runner locks on.
+//
+// An arbitrary constant that must never change, not a hash of anything. A key derived from the
+// database, the set, or the working directory is a key two instances can compute differently,
+// and a lock two instances compute differently serialises nothing while looking like it works.
+// PostgreSQL scopes advisory locks per database, so this cannot collide with the migrations of
+// some other database on the same server.
+const advisoryLockKey int64 = 0x7765627472616465 // "webtrade"
+
+const lockRunSQL = `SELECT pg_advisory_lock($1);`
+const unlockRunSQL = `SELECT pg_advisory_unlock($1);`
+
+// LockRun takes a session-level advisory lock that covers the whole run.
+//
+// Session-level (pg_advisory_lock) rather than transaction-level (pg_advisory_xact_lock)
+// because a run is not one transaction and must not become one. The plan is computed from a
+// read of the applied set, and then each migration commits in its own transaction along with
+// its own record. A transaction-level lock would have to be held in a transaction wrapping all
+// of that, which is the single long transaction this package refuses to open: one migration
+// failing would then roll back the records of the migrations that had already succeeded, and
+// the database would disagree with the repository with nothing to reconcile them.
+//
+// The race this prevents is two runners -- an operator and CI, or two operators -- reading the
+// same applied set, planning the same steps, and both executing them. The loser dies partway
+// through a set whose bodies are not idempotent: CREATE SEQUENCE in 0001 has no IF NOT
+// EXISTS, so the second instance fails on a non-idempotent statement and leaves a catalog that
+// is neither the old schema nor the new one, with a ledger that describes neither.
+//
+// A crashed run cannot leave this lock held, which is the property a transaction-level lock
+// gets for free and a session-level one has to earn. PostgreSQL releases a session-level
+// advisory lock the moment the session ends, so a killed process, an OOM kill, or a dropped
+// connection all return the lock without a line of this package running. What the code does
+// have to guarantee is the ordinary paths -- an error, and a panic inside a migration body --
+// and both are covered by the deferred unlock in Runner.Run, which runs while the panic is
+// still unwinding.
+func (s *SQLStore) LockRun(ctx context.Context) (RunLock, error) {
+	// A dedicated connection, because the lock belongs to a session and database/sql hands out
+	// pooled connections that other goroutines will reuse. Locking on one and releasing on
+	// another is unlocking someone else's lock, which PostgreSQL answers with a warning and no
+	// change.
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("%w: taking a connection to hold the migration lock on: %v",
+			ErrStore, err)
+	}
+	if _, err := conn.ExecContext(ctx, lockRunSQL, advisoryLockKey); err != nil {
+		// Nothing is locked, but the connection is already out of the pool and has to go back.
+		_ = conn.Close()
+		return nil, fmt.Errorf("%w: waiting for the migration lock: %v", ErrStore, err)
+	}
+	return &sqlRunLock{conn: conn}, nil
+}
+
+// sqlRunLock is a session-level advisory lock held on one connection.
+type sqlRunLock struct {
+	conn *sql.Conn
+}
+
+// Unlock releases the lock and returns the connection to the pool.
+func (l *sqlRunLock) Unlock(ctx context.Context) error {
+	if _, err := l.conn.ExecContext(ctx, unlockRunSQL, advisoryLockKey); err != nil {
+		// Returning a connection to the pool that still holds the lock would hand the lock to
+		// whichever caller gets that session next, and no other session can release it: every
+		// later run would block until its own timeout, with nothing in the logs but a wait.
+		// Marking the connection bad makes database/sql close the socket, and PostgreSQL
+		// drops the session-level lock the instant the session ends -- so the failure mode is
+		// one lost connection rather than a wedged database.
+		_ = l.conn.Raw(func(any) error { return driver.ErrBadConn })
+		return fmt.Errorf("%w: releasing the migration lock; the connection was dropped "+
+			"rather than pooled, so the lock is released with the session: %v", ErrStore, err)
+	}
+	return l.conn.Close()
+}
+
+// unlockTimeout bounds the release of the run lock.
+//
+// The unlock runs on a path that has already failed or already succeeded, so it must not be
+// able to hang: a release that never completes would hold a pooled connection forever. This is
+// generous because releasing a lock is one round trip.
+const unlockTimeout = 10 * time.Second
+
+// compile-time proof that the store offers the run lock the runner looks for.
+var _ interface {
+	LockRun(context.Context) (RunLock, error)
+} = (*SQLStore)(nil)

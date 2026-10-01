@@ -16,9 +16,11 @@ Run:
 
 from __future__ import annotations
 
+import importlib.util
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -427,6 +429,35 @@ def test_every_python_worker_has_a_release_gate(workflow: dict) -> None:
         )
 
 
+def _bash_gate():
+    """Load scripts/check_workflow_bash.py as a module, by path.
+
+    Loaded by explicit path rather than by putting scripts/ on sys.path, because the whole point
+    of importing it is that this file and the script cannot drift: an import that resolved to some
+    other check_workflow_bash anywhere on the path would defeat that, and would do it silently.
+
+    The module is re-read on each call rather than cached in a global. It is cheap to parse, and a
+    cached copy would mean a test could pass against a stale version of the gate after the gate
+    itself had been edited - which is precisely the failure this consolidation is meant to end.
+    """
+    path = REPO_ROOT / "scripts" / "check_workflow_bash.py"
+    if not path.is_file():
+        pytest.skip("check_workflow_bash.py not present")
+    spec = importlib.util.spec_from_file_location("_check_workflow_bash", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    # Registered for the duration of exec_module and removed after. @dataclass resolves its own
+    # annotations through sys.modules[cls.__module__], so a module executed without an entry there
+    # raises while the class body is being built - and the error names dataclasses internals
+    # rather than the missing entry, which is a poor way to learn this.
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        del sys.modules[spec.name]
+    return module
+
+
 def test_every_run_block_is_valid_bash(workflow: dict) -> None:
     """Every `run:` block must be syntactically valid bash.
 
@@ -440,32 +471,145 @@ def test_every_run_block_is_valid_bash(workflow: dict) -> None:
     a malformed workflow, because a workflow GitHub cannot parse does not run its own jobs. The
     local suite is the only place this is caught before a push.
 
+    What is *not* duplicated is the rule itself. The block discovery, the binary-stdin `bash -n`
+    call, and the non-vacuity assertion all come from the script, imported by path. An earlier
+    version reimplemented the loop here, which left two copies of one check: the pytest copy
+    refused a workflow with zero `run:` blocks while the standalone script passed it, so the CI
+    step only failed closed as long as some sibling step had run first. Two copies of a rule is
+    one more edit than it takes for them to disagree, and they disagreed about exactly the case
+    that cannot announce itself.
+
     The check is skipped, never failed, when bash is absent, because a missing interpreter is
     not a malformed workflow and must not be reported as one.
     """
-    bash = shutil.which("bash")
-    if bash is None:
+    gate = _bash_gate()
+
+    # Asserted before the loop rather than after: an empty result should stop the test, not run a
+    # zero-iteration loop and then be noticed. The message is the gate's, so the two cannot
+    # describe the same rule in different words.
+    blocks = gate.collect_run_blocks(workflow)
+    assert blocks, gate.VACUITY
+
+    for block in blocks:
+        result = gate.bash_syntax_check(block.script)
+        assert result.returncode == 0, (
+            f"{block.job}: {block.label} is not valid bash: "
+            f"{result.stderr.decode('utf-8', 'replace').strip()}"
+        )
+
+
+def test_bash_gate_script_passes_on_the_real_workflow() -> None:
+    """The standalone gate must exit zero on the workflow as committed.
+
+    This is the script's own entry point rather than a reimplementation of it. Since the pytest
+    check above now delegates to the script's functions, nothing else would notice if `main()`
+    itself started failing - returning the wrong code, or reporting a failure on a valid
+    workflow - and the standalone CI step is what runs it. Run as a subprocess so the exit code
+    under test is the one a caller would see.
+    """
+    if shutil.which("bash") is None:
         pytest.skip("no bash on PATH; the run blocks were not syntax-checked")
 
-    checked = 0
-    for job_name, job in (workflow.get("jobs") or {}).items():
-        for step in job.get("steps") or []:
-            script = step.get("run")
-            if not isinstance(script, str) or not script.strip():
-                continue
-            label = step.get("name") or step.get("uses") or "(unnamed step)"
-            checked += 1
+    result = subprocess.run(
+        [sys.executable, "scripts/check_workflow_bash.py"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        "check_workflow_bash.py failed on the committed workflow:\n"
+        + result.stdout[-2000:]
+        + result.stderr[-2000:]
+    )
 
-            # Binary stdin, never a text pipe: on Windows a text-mode pipe translates "\n" to
-            # "\r\n", and bash reads the carriage return as part of the command. That produced
-            # phantom failures for a workflow that was entirely valid.
-            body = script if script.lstrip().startswith("#!") else "#!/usr/bin/env bash\n" + script
-            result = subprocess.run(
-                [bash, "-n"], input=body.encode("utf-8"), capture_output=True
-            )
-            assert result.returncode == 0, (
-                f"{job_name}: {label} is not valid bash: "
-                f"{result.stderr.decode('utf-8', 'replace').strip()}"
-            )
 
-    assert checked > 0, "no run: blocks were found; the check is not examining anything"
+@pytest.mark.parametrize(
+    "workflow_yaml, reason",
+    [
+        ("jobs:\n  toolchain:\n    steps: []\n", "a job whose steps were emptied"),
+        (
+            "jobs:\n  toolchain:\n    steps:\n      - uses: actions/checkout@v4\n",
+            "a job whose run: steps became uses: steps",
+        ),
+        ("name: ci\non: push\n", "a workflow with no jobs key at all"),
+        ("jobs: {}\n", "a workflow with an empty jobs mapping"),
+        ("- just\n- a\n- list\n", "a document that parses to a list, not a mapping"),
+    ],
+)
+def test_bash_gate_script_fails_when_it_finds_no_run_blocks(
+    workflow_yaml: str, reason: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Zero `run:` blocks must be a failure, in the script, not only in this file.
+
+    The script prints "PASS (0 run: blocks parsed)" and returns 0 for a workflow it examined
+    nothing in. Every shape below produces that outcome - an emptied job, a `run:` renamed to
+    `uses:`, a jobs key that vanished, a mapping with no steps, even a document that is not a
+    mapping at all - and in each of them the workflow's bash has not been checked by anything.
+
+    The gate's whole value is that a syntax error in a step is caught before a runner finds it.
+    If the step that would have caught it stops finding steps, it must say so rather than report
+    a pass, because a pass here is indistinguishable from the workflow being fine.
+
+    Driven in-process against a temporary workflow rather than by editing .github/workflows/ci.yml
+    and restoring it, so the test cannot leave the real workflow modified if it dies partway.
+    Bash is required because main() skips before this guard is reached, and a skip here would be
+    the gate declining to run - which is exactly the outcome this test must not confuse with a
+    verdict.
+    """
+    if shutil.which("bash") is None:
+        pytest.skip("no bash on PATH; the run blocks were not syntax-checked")
+
+    gate = _bash_gate()
+    workflow_path = tmp_path / "no-run-blocks.yml"
+    workflow_path.write_text(workflow_yaml, encoding="utf-8", newline="\n")
+
+    original = gate.WORKFLOW
+    gate.WORKFLOW = workflow_path
+    try:
+        exit_code = gate.main()
+        output = capsys.readouterr().out
+    finally:
+        gate.WORKFLOW = original
+
+    assert exit_code != 0, (
+        f"check_workflow_bash.py returned 0 for {reason}. A gate that examined nothing must fail, "
+        f"not report a pass. Output was:\n{output}"
+    )
+    assert gate.VACUITY in output, (
+        f"the failure did not say why it failed: {reason}. Output was:\n{output}"
+    )
+    assert "PASS" not in output, f"a vacuous run still reported a pass: {reason}"
+
+
+def test_bash_gate_script_passes_a_workflow_with_one_valid_run_block(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The zero-block guard must not be a blanket refusal.
+
+    A guard added to the wrong side of a condition - `if blocks: check them` instead of
+    `if not blocks: fail` - passes every test above and fails the only thing that matters. This is
+    the positive control for the test above, and it is the same shape of control
+    scripts/prove_bash_gate_detects.py established for `bash -n` itself.
+    """
+    if shutil.which("bash") is None:
+        pytest.skip("no bash on PATH; the run blocks were not syntax-checked")
+
+    gate = _bash_gate()
+    workflow_path = tmp_path / "one-run-block.yml"
+    workflow_path.write_text(
+        "jobs:\n  toolchain:\n    steps:\n      - name: one valid block\n"
+        "        run: |\n          set -euo pipefail\n          echo hello\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    original = gate.WORKFLOW
+    gate.WORKFLOW = workflow_path
+    try:
+        exit_code = gate.main()
+        output = capsys.readouterr().out
+    finally:
+        gate.WORKFLOW = original
+
+    assert exit_code == 0, f"a workflow with one valid run: block was rejected. Output:\n{output}"
+    assert "PASS (1 run: blocks parsed)" in output, output

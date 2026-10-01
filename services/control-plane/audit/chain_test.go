@@ -171,6 +171,74 @@ func TestReusingAnIdentityForDifferentContentIsRefused(t *testing.T) {
 	}
 }
 
+// One identity, one record - including inside a single batch. byAuditID is only written in
+// the commit loop, so before this check a batch naming the same audit_id twice staged two
+// records at consecutive sequences: the pair was accepted, exported durably, and then
+// refused by Restore on the next startup, which is a partition that can never be rehydrated
+// again. Both variants are refused, and the identical one is the interesting one: it looks
+// like a harmless retry and is exactly as unrecoverable.
+func TestAppendRefusesAnAuditIDRepeatedWithinOneBatch(t *testing.T) {
+	for name, second := range map[string]func(Record) Record{
+		"identical record": func(r Record) Record { return r },
+		"different content": func(r Record) Record {
+			r.Action = "ORDER_CANCELLED"
+			return r
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := NewChain()
+			doubled := stagedRecord("aud-1", "tenant-a")
+			if _, err := c.Append([]Record{doubled, second(doubled)}); err == nil {
+				t.Fatal("two records sharing an audit_id in one batch must be refused")
+			}
+			// A refused batch writes nothing, which is the point: a half-written identity is
+			// the state the audit_id primary key exists to make impossible.
+			if got := c.LastSequence("tenant-a"); got != 0 {
+				t.Fatalf("a refused batch left the partition at sequence %d", got)
+			}
+			if len(c.Records("tenant-a")) != 0 {
+				t.Fatalf("a refused batch wrote %d record(s)", len(c.Records("tenant-a")))
+			}
+		})
+	}
+}
+
+// The within-batch refusal must not reach the redelivery path, which is a different case:
+// docs/22 section 7 requires a retry of an earlier delivery to be idempotent, and the retry
+// arrives in its own batch rather than doubling up inside one.
+func TestAppendStillAcceptsARedeliveryInALaterBatch(t *testing.T) {
+	c := NewChain()
+	first, err := c.Append([]Record{stagedRecord("aud-1", "tenant-a")})
+	if err != nil {
+		t.Fatalf("first Append: %v", err)
+	}
+	second, err := c.Append([]Record{stagedRecord("aud-1", "tenant-a")})
+	if err != nil {
+		t.Fatalf("a redelivery in a later batch must remain idempotent: %v", err)
+	}
+	if second[0].RecordHash != first[0].RecordHash || c.LastSequence("tenant-a") != 1 {
+		t.Fatal("the redelivery was not recognised as the record already on the chain")
+	}
+}
+
+// The duplicate is refused wherever it appears in the batch, not only at the front, and a
+// batch whose later half is refused writes none of its earlier records.
+func TestAppendRefusesADuplicateThatArrivesAfterOtherRecords(t *testing.T) {
+	c := NewChain()
+	batch := []Record{
+		stagedRecord("aud-1", "tenant-a"),
+		stagedRecord("aud-2", "tenant-a"),
+		stagedRecord("aud-1", "tenant-a"),
+	}
+	if _, err := c.Append(batch); err == nil {
+		t.Fatal("a duplicate identity in the last position must be refused too")
+	}
+	if got := c.LastSequence("tenant-a"); got != 0 {
+		t.Fatalf("the two records before the duplicate were written anyway (sequence %d); "+
+			"Append is all-or-nothing across the batch", got)
+	}
+}
+
 func TestRecordsAreAppendOnlyThroughTheChain(t *testing.T) {
 	c := NewChain()
 	if _, err := c.Append([]Record{stagedRecord("aud-1", "tenant-a")}); err != nil {

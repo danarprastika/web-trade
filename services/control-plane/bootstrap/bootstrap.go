@@ -149,12 +149,12 @@ func Build(ctx context.Context, d Deps) (*Stack, error) {
 		return nil, fmt.Errorf("building the audit exporter: %w", err)
 	}
 
-	journal, err := model.RehydratedJournal(chain, d.Clock, d.Environment, d.Store, d.Snapshot)
+	journal, err := model.RehydratedJournal(ctx, chain, d.Clock, d.Environment, d.Store, d.Snapshot)
 	if err != nil {
 		return nil, fmt.Errorf("rehydrating the model journal: %w", err)
 	}
 
-	registry, err := model.RehydratedWorkloadRegistry(d.Clock, d.Identity, d.Identities)
+	registry, err := model.RehydratedWorkloadRegistry(ctx, d.Clock, d.Identity, d.Identities)
 	if err != nil {
 		return nil, fmt.Errorf("rehydrating the workload registry: %w", err)
 	}

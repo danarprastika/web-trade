@@ -94,6 +94,7 @@ func (r *WorkloadRegistry) Restore(snapshot IdentitySnapshot) error {
 // necessarily have the other - a read-only replica, or a migration process, can restore a
 // registry it must not write to.
 func RehydratedWorkloadRegistry(
+	ctx context.Context,
 	now func() time.Time,
 	store IdentityStore,
 	reader IdentitySnapshotReader,
@@ -108,7 +109,7 @@ func RehydratedWorkloadRegistry(
 				"the registry would be empty, and an empty registry reports no revoked "+
 				"identity as revoked")
 	}
-	snapshot, err := reader.LoadIdentitySnapshot(context.Background())
+	snapshot, err := reader.LoadIdentitySnapshot(ctx)
 	if err != nil {
 		return nil, err
 	}

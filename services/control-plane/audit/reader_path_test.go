@@ -2,6 +2,7 @@ package audit
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
 
@@ -19,6 +20,24 @@ type fakeReaderQuerier struct {
 	calls   []dbgen.ListAuditRecordsInPartitionRangeParams
 	canned  [][]dbgen.AuditRecord // when set, returned in order, ignoring the range
 	respond func(dbgen.ListAuditRecordsInPartitionRangeParams) ([]dbgen.AuditRecord, error)
+	// checkpoints holds at most one row per partition: the query this stands in for returns
+	// the newest, so a second row for one partition could never be observed.
+	checkpoints map[string]dbgen.AuditCheckpoint
+	cpErr       error
+}
+
+func (q *fakeReaderQuerier) GetLatestAuditCheckpoint(
+	_ context.Context, partition string,
+) (dbgen.AuditCheckpoint, error) {
+	if q.cpErr != nil {
+		return dbgen.AuditCheckpoint{}, q.cpErr
+	}
+	cp, ok := q.checkpoints[partition]
+	if !ok {
+		// The generated query is :one, so a partition with no checkpoint is sql.ErrNoRows.
+		return dbgen.AuditCheckpoint{}, sql.ErrNoRows
+	}
+	return cp, nil
 }
 
 func (q *fakeReaderQuerier) ListAuditRecordsInPartitionRange(

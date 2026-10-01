@@ -35,17 +35,36 @@ type ChainReader interface {
 	// sorting would make a reordered archive indistinguishable from an intact one, so a
 	// reader that returned records out of order would produce an archive that cannot be
 	// loaded rather than one that is merely unsorted.
+	//
+	// This method alone cannot tell a partition that ended from a partition whose tail was
+	// deleted, because the two present exactly the same rows. That distinction needs the
+	// signed checkpoints, which arrive through ChainAnchorReader below.
 	ReadPartition(ctx context.Context, partition string, from, to int64) ([]Record, error)
+}
+
+// ChainAnchorReader reads the signed checkpoints that say how far a partition actually went.
+//
+// It is separate from ChainReader rather than part of it because the anchor is a different
+// kind of artifact: records are the evidence, checkpoints are the promise about the evidence
+// that was made while it was still all there. Rehydrate uses it when the reader offers it, so
+// that a truncated archive fails closed instead of restoring as a shorter - and perfectly
+// internally consistent - chain.
+type ChainAnchorReader interface {
+	// LatestCheckpoint returns the checkpoint covering the highest sequence in a partition,
+	// and whether one exists. A partition with no checkpoint is not an error: it is a
+	// partition nothing has vouched for yet, which is the ordinary state of a fresh chain.
+	LatestCheckpoint(ctx context.Context, partition string) (Checkpoint, bool, error)
 }
 
 // SQLChainReaderQuerier is the subset of the generated accessors this reader uses.
 //
-// It exposes exactly one query, which is a range read with an explicit upper bound. There is
-// no unfiltered "select all from audit_records" reachable here, because an unbounded read
-// over seven years of retained evidence is a table scan and the callers that need one are
-// investigations rather than startup paths.
+// It exposes one range read with an explicit upper bound and one point read of a partition's
+// latest checkpoint. There is no unfiltered "select all from audit_records" reachable here,
+// because an unbounded read over seven years of retained evidence is a table scan and the
+// callers that need one are investigations rather than startup paths.
 type SQLChainReaderQuerier interface {
 	ListAuditRecordsInPartitionRange(ctx context.Context, arg dbgen.ListAuditRecordsInPartitionRangeParams) ([]dbgen.AuditRecord, error)
+	GetLatestAuditCheckpoint(ctx context.Context, partition string) (dbgen.AuditCheckpoint, error)
 }
 
 // SQLChainReader is a ChainReader over the generated accessors.
@@ -107,6 +126,68 @@ func (r *SQLChainReader) ReadPartition(ctx context.Context, partition string, fr
 		records = append(records, rec)
 	}
 	return records, nil
+}
+
+// LatestCheckpoint returns the newest signed checkpoint in a partition, if one exists.
+//
+// This is the anchor the restore needs and it is already durable: audit_checkpoints is
+// append-only, its rows are signed, and this is the query the repository already generates
+// for it. Nothing here had to be invented to detect a truncated tail, and nothing here needs
+// a migration to be able to.
+func (r *SQLChainReader) LatestCheckpoint(ctx context.Context, partition string) (Checkpoint, bool, error) {
+	row, err := r.q.GetLatestAuditCheckpoint(ctx, partition)
+	if errors.Is(err, sql.ErrNoRows) {
+		// Nothing has vouched for this partition yet. That is a state, not a failure, and
+		// reporting it as one would make a fresh deployment refuse to start.
+		return Checkpoint{}, false, nil
+	}
+	if err != nil {
+		return Checkpoint{}, false, fmt.Errorf("reading the latest checkpoint of partition %s: %w", partition, err)
+	}
+	cp, err := checkpointFrom(row)
+	if err != nil {
+		return Checkpoint{}, false, fmt.Errorf("partition %s latest checkpoint: %w", partition, err)
+	}
+	return cp, true, nil
+}
+
+// checkpointFrom maps a stored checkpoint row back onto a Checkpoint.
+//
+// The schema version is compared rather than adopted, for the same reason recordFrom does it:
+// checkpointFields hashes the package constant, so a row written under another version cannot
+// be re-derived here and would be refused downstream for a reason that looks like tampering.
+//
+// The partition on the row is carried, not checked, because checking it needs the partition
+// that was asked for. Rehydrate does that comparison, since an anchor filed under the wrong
+// partition would compare a sequence number against the wrong chain.
+func checkpointFrom(row dbgen.AuditCheckpoint) (Checkpoint, error) {
+	if row.SchemaVersion != CheckpointSchemaVersion {
+		return Checkpoint{}, reject(contracts.CodeValidation,
+			"stored checkpoint schema_version is %d but this build writes version %d; the "+
+				"checkpoint cannot be re-derived because the version is part of the signed "+
+				"payload, not a property of the row", row.SchemaVersion, CheckpointSchemaVersion)
+	}
+	firstHash, err := hashFrom(row.FirstHash)
+	if err != nil {
+		return Checkpoint{}, fmt.Errorf("first_hash: %w", err)
+	}
+	lastHash, err := hashFrom(row.LastHash)
+	if err != nil {
+		return Checkpoint{}, fmt.Errorf("last_hash: %w", err)
+	}
+	return Checkpoint{
+		Partition:     row.Partition,
+		FirstSequence: row.FirstSequence,
+		LastSequence:  row.LastSequence,
+		FirstHash:     firstHash,
+		LastHash:      lastHash,
+		Count:         int(row.RecordCount),
+		CreatedAt:     TimestampFrom(row.CreatedAtUtc),
+		SigningKeyID:  row.SigningKeyID,
+		// Copied rather than aliased, for the reason the record hashes are: the row's
+		// slice belongs to the driver and an aliased one would mutate under the next scan.
+		Signature: append(Signature(nil), row.Signature...),
+	}, nil
 }
 
 // recordFrom maps a stored row back onto a Record.
@@ -192,21 +273,64 @@ func hashFrom(raw []byte) (Hash, error) {
 // the second partition. Calling it per page would also reorder the archive, which is the one
 // thing Restore exists to be able to detect.
 //
+// Truncation is refused, not absorbed. Paging cannot tell a partition that ended from a
+// partition whose newest records were deleted, because the two return the same rows, so when
+// the reader can also serve signed checkpoints - SQLChainReader can, and that is the reader
+// the control plane rehydrates through - each partition is anchored at its latest checkpoint
+// and the archive must still reach that sequence with the hash that was signed. A surviving
+// prefix is contiguous and correctly linked, so without the anchor it would restore cleanly
+// and the process would go on to report a verified chain over evidence that is gone.
+//
+// The anchor is optional because a reader that has nowhere durable to read checkpoints from
+// cannot supply one, and refusing to rehydrate at all in that case would make an in-memory
+// reader unusable rather than making a truncated archive safe. What that costs is stated
+// rather than hidden: without an anchor the archive is checked for tampering, reordering and
+// holes, and a deleted tail is not among the things it can see.
+//
 // A partition with no stored records is not an error. It means the chain has not been written
 // to yet, which is the ordinary state of a fresh deployment.
 func Rehydrate(ctx context.Context, c *Chain, r ChainReader, partitions []string) error {
 	var archive []Record
+	var anchorable ChainAnchorReader
+	var anchors map[string]Checkpoint
+	if reader, ok := r.(ChainAnchorReader); ok {
+		anchorable = reader
+		anchors = make(map[string]Checkpoint, len(partitions))
+	}
+
 	for _, partition := range partitions {
 		records, err := readPartition(ctx, r, partition)
 		if err != nil {
 			return fmt.Errorf("rehydrating partition %s: %w", partition, err)
 		}
 		archive = append(archive, records...)
+
+		if anchors == nil {
+			continue
+		}
+		cp, found, err := anchorable.LatestCheckpoint(ctx, partition)
+		if err != nil {
+			return fmt.Errorf("reading the head anchor of partition %s: %w", partition, err)
+		}
+		if !found {
+			continue
+		}
+		if cp.Partition != partition {
+			return reject(contracts.CodeValidation,
+				"the checkpoint returned for partition %s names partition %q; an anchor filed "+
+					"under the wrong partition would compare a sequence against the wrong chain",
+				partition, cp.Partition)
+		}
+		anchors[partition] = cp
 	}
-	if len(archive) == 0 {
+
+	if len(archive) == 0 && len(anchors) == 0 {
 		return nil
 	}
-	if err := c.Restore(archive); err != nil {
+	// The anchored restore rather than the plain one, even when no anchor was found: with an
+	// empty anchor map it is the same operation, and there is then no branch here that can
+	// skip the head comparison.
+	if err := c.restore(archive, anchors); err != nil {
 		return fmt.Errorf("restoring %d record(s) across %d partition(s): %w",
 			len(archive), len(partitions), err)
 	}
@@ -218,6 +342,12 @@ func Rehydrate(ctx context.Context, c *Chain, r ChainReader, partitions []string
 // The page size is a floor on the query's working set, not a cap on the result: an in-memory
 // Chain holds every record it has seen, so a partition is fully resident once rehydrated
 // whatever order it arrives in.
+//
+// A short page is treated as the end of the partition because the query is bounded and
+// ordered: if more rows existed, this page would have been full. That reasoning establishes
+// completeness of the *read*, not of the archive - the rows that are not in the table are
+// not rows a page can find - which is why the truncation check above and not this loop is
+// what refuses a deleted tail.
 func readPartition(ctx context.Context, r ChainReader, partition string) ([]Record, error) {
 	records := make([]Record, 0, rehydratePageSize)
 	for from := int64(1); ; from += rehydratePageSize {
@@ -234,3 +364,9 @@ func readPartition(ctx context.Context, r ChainReader, partition string) ([]Reco
 }
 
 var _ SQLChainReaderQuerier = (dbgen.Querier)(nil)
+
+// The SQL reader is the one the control plane rehydrates through, so it is the one whose
+// anchors Rehydrate will find. Asserting it here means a rename or a lost method is a build
+// failure rather than a silent fall back to the unanchored path, which is the one branch
+// where a truncated archive would go unnoticed.
+var _ ChainAnchorReader = (*SQLChainReader)(nil)

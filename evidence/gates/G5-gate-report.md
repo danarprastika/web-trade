@@ -72,7 +72,7 @@ Mechanically established against a real OS process and a real PostgreSQL 17.11. 
 
 ## Evidence artifacts
 
-80 files, 900657 bytes, digest `sha256`.
+87 files, 1034522 bytes, digest `sha256`.
 
 Every path is relative to the repository root and every digest is over the exact bytes at the commit above. A criterion cannot be re-verified without these.
 
@@ -80,8 +80,9 @@ Every path is relative to the repository root and every digest is over the exact
 | --- | --- | --- |
 | `db/migrations/0004_model_registry.sql` | `fe17a1ab2695c79e605b5f485605a0f6cc5532e3d375156b32e0fc1af31a6e18` | 21579 |
 | `scripts/generate_g5_gate_report.py` | `f250894b8d358b70fd6d4b8ce21bf0204e80188eb90ffee0b118d9a033302b34` | 23043 |
-| `services/control-plane/audit/chain.go` | `9ff1f47f0526992eb189a15a471e4dedb9361a24077d13fec7cf3ae31a3584f3` | 8179 |
-| `services/control-plane/audit/chain_test.go` | `abb2e594966c668837714146e3d58f9416726ca08ac43812209c81e0292e6525` | 8302 |
+| `services/control-plane/audit/anchor_test.go` | `01a7715670311388a597adf1c2fbe17ff03fe2a2a01cab6a189c1f606b530865` | 15997 |
+| `services/control-plane/audit/chain.go` | `5e703062fd2910db6673aecac189090facddf0cc5b676aee8b717c3d14e3cb20` | 9549 |
+| `services/control-plane/audit/chain_test.go` | `a19f009ff13dbddf4d97ea5e059b6929ab92a7d0cc8f5d9976036e43980b962f` | 11284 |
 | `services/control-plane/audit/checkpoint.go` | `995283806fa757acdd3cd34d3c1d27bb5af59c6343eb4bfa50bad2783ad7b541` | 4761 |
 | `services/control-plane/audit/checkpoint_test.go` | `8233919582d28a4daecaff54751ebf2571ccd8a528b186e1ae32b1f7aaf8b3f7` | 7858 |
 | `services/control-plane/audit/doc.go` | `e29d3b71d05985c5a0a93d589a0bbd38bb23ebdc29bca3b9cd5165fa0c22ab00` | 1757 |
@@ -90,41 +91,46 @@ Every path is relative to the repository root and every digest is over the exact
 | `services/control-plane/audit/guard_test.go` | `248dc74eaf933ee442626fc55b27a4e1b3dbe078b86ff587f865a16033a94b68` | 7613 |
 | `services/control-plane/audit/keys.go` | `435dedefb60dc2438cb2da54810eb876c6df4b32b6f48ee9fe8b88fe632d0579` | 8806 |
 | `services/control-plane/audit/migration_contract_test.go` | `dffa964a77a4107c2184f08d0c37c200677dc282d55c91deaed56300e539a6ef` | 6982 |
-| `services/control-plane/audit/reader.go` | `b98ef2802b4fa4a21a099c069f3ea7214132c25101fc2948655957c50310f7c7` | 9908 |
-| `services/control-plane/audit/reader_path_test.go` | `494770a2eeb66967844944e1f0d5bcc80bbd72b67b46ce0a5158e0bf2a199798` | 7856 |
+| `services/control-plane/audit/reader.go` | `d8ee9654096fab567125f8e0009772330a43223b03f5f35561137bab8469d10b` | 16916 |
+| `services/control-plane/audit/reader_path_test.go` | `4a99f8c22ebebfdb2220683e925a535cb377da8db2d59efcf45a35238ead0f67` | 8497 |
 | `services/control-plane/audit/reader_test.go` | `a1386b1f2c8a7a22fab513e2549c6520a2d729298a9e44916f3ebfe6026609a7` | 12445 |
 | `services/control-plane/audit/record.go` | `5c4a6d681aa83a218faee2a9db2033e70bb99076368b6e862297400ceb9362c5` | 14269 |
 | `services/control-plane/audit/record_test.go` | `10f1b24b11d8e45f5a6727722487ae43132ac3e3173176d59506e734f9deaed7` | 8927 |
-| `services/control-plane/audit/restore.go` | `3bc2deac02d3fd8bb7b9e9d1037980cc2b920474b8c3255859822352fe131a0b` | 5160 |
+| `services/control-plane/audit/restore.go` | `27b85d9c88770c5abce6d185a207be8b84e7d6789cc0af8b875ff53120bb06a8` | 9962 |
 | `services/control-plane/audit/restore_test.go` | `0f445302c6a20765621f44eb8bb0e9d079cde02db45d097cf9b85133fadf6bd6` | 11002 |
 | `services/control-plane/audit/retention.go` | `3da295128848fd33a46f1b0020067b1093189e5964459669fac3b90a7a1ab96e` | 3921 |
 | `services/control-plane/audit/sink.go` | `ae4b9e18c1cf9c111ff2c4aaa5a817dc2ba9e9d5e7f2bd9e7b28df5f3bfd3dfa` | 11279 |
 | `services/control-plane/audit/sink_test.go` | `03b7130ba96541cf18a200c649bae10b73ea3aa54e9de7dbdc5ced605523c95a` | 16327 |
 | `services/control-plane/audit/verify.go` | `99ad8860381547f350c1ae842b8bc2d712615e4263bc878863ecb67a87644ffb` | 8202 |
 | `services/control-plane/audit/verify_test.go` | `adbe1227fa0351864d53539ea4e29685a1a0c401e57174c1fe009833af1e23df` | 9011 |
-| `services/control-plane/bootstrap/bootstrap.go` | `c88b470b97d7d72e71ff8ce92d47054f8a9f73e21a0aa9a785e41c317378ed1d` | 9663 |
+| `services/control-plane/bootstrap/bootstrap.go` | `8ca4e59d452ce5339e8d619663f8f8aee7f401c8a399049ba8bc2892eee2f508` | 9673 |
 | `services/control-plane/bootstrap/bootstrap_test.go` | `31e7a3f55bbd498a603158e5df2d720f3da5b82e07e2f66ac85e715fa77aadcb` | 12000 |
 | `services/control-plane/cmd/control-plane/main.go` | `4fa55ad0c56615817a9972920c53b9c2fae88d35273cb5cbb5079ab9e8940acd` | 18214 |
 | `services/control-plane/cmd/control-plane/main_test.go` | `64a7420c8bcec3cc5a19d9299dbbfc59952827ffe68ea6648f1ef11cea899390` | 12084 |
-| `services/control-plane/cmd/migrate/main.go` | `db60fb60b7020784471363b628655de71afac4d0eaf7dcbdcd25ddfb518a1f3f` | 6119 |
-| `services/control-plane/db/dbgen/model_registry.sql.go` | `f31b4db443b86aa294a72617aed2a67a152a022330068a48ad4b34b9dd59657f` | 33348 |
-| `services/control-plane/db/queries/model_registry.sql` | `0a4ee7e70d033951a6207a0da258ba675872f10e972e0204ab53c708890bf8ad` | 13461 |
+| `services/control-plane/cmd/migrate/main.go` | `7e256beb715e8509d5207f1369158a570e88cbd37247c4432ce90b236a71d8f8` | 8745 |
+| `services/control-plane/cmd/migrate/main_test.go` | `e8bed87001e2b1c04b6a7a7061e5d6c50a795e85c51eebcef89a572f4332fe8e` | 15428 |
+| `services/control-plane/db/dbgen/model_registry.sql.go` | `861d197d54d606c089908dc22302531375adc195ed816198539646b552306878` | 33754 |
+| `services/control-plane/db/queries/model_registry.sql` | `91d164b872fb2bdae97bc11219453914e76341ca35aa43d92b916909d6bf5763` | 13907 |
 | `services/control-plane/go.mod` | `b9f11a0ba71bb93e27752d41734781c9dd2f390d82b3cd6796b48a826d8b652a` | 1258 |
 | `services/control-plane/go.sum` | `90f48a605768fc3f5813e27cd5c63e854f07b8d1d92a5f6d7f9b9862e02ea445` | 155 |
 | `services/control-plane/integration/atomicity_test.go` | `45ec96cd8a1223d0025552ea39595bf7edf591fa65cb83e485e008b0f772e4d7` | 5260 |
 | `services/control-plane/integration/audit_test.go` | `ce2a1d3fedee2b84e271d26adc6264787aee7b1d044e56f9d0cf59ea6211b6bf` | 13547 |
+| `services/control-plane/integration/destructive_guard_test.go` | `8e259a02c811925f7b606593fca96225e4db1fbc6a2010f7b164b880cd03d210` | 12001 |
 | `services/control-plane/integration/entrypoint_test.go` | `77d1eaf821e4bbca4eaf76c03f7799d53fdca68f4884ba3e351e7bce63d914d8` | 17974 |
-| `services/control-plane/integration/harness_test.go` | `8902f690e89ec70b0680768b5da0e6746fb15e2ee3d15e7f1419ab55c4dc6c53` | 2654 |
+| `services/control-plane/integration/harness_test.go` | `7be7599615133ae23f8a9615ec91b9c88bb807bc8ba26cc9ecffdb15bcc1e6bc` | 13597 |
 | `services/control-plane/integration/identity_test.go` | `eefc72f46903ab30d63175e43a1387a178f504c064a321d5e62494f7ca366f26` | 10270 |
-| `services/control-plane/integration/migrator_test.go` | `c4ff49f65941c1d79929b833eaf0ed35370db0dcbd4abdbaddd46327e90359bc` | 6005 |
+| `services/control-plane/integration/migrator_test.go` | `f842dc3a7ad27b851b1cb5dde4308e54058c2a513b748311fa79c9ac863c3afc` | 6742 |
 | `services/control-plane/integration/model_store_test.go` | `41fba578bbf0b1060f9ae1e9a1f413dd42bbd873036a5ad25ffb99ba3ccc08b0` | 10264 |
 | `services/control-plane/integration/restart_test.go` | `d2d2c29e915037e88778639acb773a583a0b2e24ca35fb78d15e876a7618b7ee` | 11229 |
-| `services/control-plane/migrate/migrate.go` | `d992d582a05a6ed7ada5b062eff71f8c118f45ab54e0039cba92fa53651f64e9` | 13709 |
+| `services/control-plane/migrate/live_test.go` | `4968d75d221d4edfd4360453f291c1eca354fa635a2c611eb4a53606853f142f` | 13759 |
+| `services/control-plane/migrate/lock_test.go` | `f386db01558d3fbe9e6fbe8117005366e87ac1b52adcaac7044538ae137f0f33` | 9021 |
+| `services/control-plane/migrate/migrate.go` | `e27ec916de880e67edc4863b4933614178a48dd2a09ed1459b860b3b9403e34b` | 17852 |
 | `services/control-plane/migrate/migrate_test.go` | `3484a96ea8003aac8e19b15d06f1680f2058dcc18a742fe2313fefa9363dbc56` | 9988 |
+| `services/control-plane/migrate/plan_target_test.go` | `af40a5c68abd62a0c4686c5d1982b4da50888c7fe2a89d1891aeac6acce5c196` | 7112 |
 | `services/control-plane/migrate/real_migrations_test.go` | `a65a46d8bae8c1a737403e6956958b04fc8969e8fd694f91074f88fc7d4c5eda` | 6193 |
-| `services/control-plane/migrate/runner.go` | `bf30f1f451d5636b718e185ac7656616268272623d989f61a2583d0afa1c3ee2` | 3366 |
-| `services/control-plane/migrate/store.go` | `d55dfcc7b104db054250c5a5e6f822a9ebf43d498eb87632515be23534c46efe` | 3221 |
-| `services/control-plane/migrate/store_sql.go` | `f2ea71792cf60d4860a9cdef9b847da0adc7e9e9c0b27f7353f6a2095e25b152` | 6811 |
+| `services/control-plane/migrate/runner.go` | `5866aee6344bdf967955793366ea4640d3fc79adc2a5c34f3eb5cc44a97723a5` | 6266 |
+| `services/control-plane/migrate/store.go` | `354b3159e2a48342ee56c8c57cea71842c81a6c9c8a7479add83e57cc267c36d` | 5228 |
+| `services/control-plane/migrate/store_sql.go` | `0b561116b84b359ec8cead3a363611bdcb9e5b82965c1d8b98b0c44c86b4aac5` | 12917 |
 | `services/control-plane/migrate/store_sql_test.go` | `fd933bd49b7db2874d24844ddaa39268908dad01ae3eb1b43bf186d951e5cd91` | 3814 |
 | `services/control-plane/model/compromise.go` | `71347be3fa1ca20d9290f0480a0477c014345c6ad2dbf9fbc8cf4fc0bf014d9e` | 13697 |
 | `services/control-plane/model/compromise_test.go` | `04f2abb7a9e9f17aecd738cf6947c4e0a6306722d814f187a75eb34f9a1f2eb1` | 15890 |
@@ -133,8 +139,8 @@ Every path is relative to the repository root and every digest is over the exact
 | `services/control-plane/model/declaration_test.go` | `4646ffd8fae526ae8bf2682459ccdfb0689b4ecfc7aae8700e5afb9a321ba64a` | 7514 |
 | `services/control-plane/model/identity.go` | `8d6a7499262589baf28803b0a6376210a84941497e9efe892c04e554bc6fcb3c` | 23735 |
 | `services/control-plane/model/identity_read.go` | `b72426a11a4ce8aa27e5117c7cc32c6ccf5c09c000275123c1cf9312a4cdb814` | 6982 |
-| `services/control-plane/model/identity_restore.go` | `1d97d0c0bd659211abe1cd7cb142b1be81b67528ab529bb89d2d5d199b05adb9` | 5197 |
-| `services/control-plane/model/identity_restore_test.go` | `a2ddb1f8e301ee345a8cc40102be7c0ce152f804323571aa5eb67412525f2a4a` | 19921 |
+| `services/control-plane/model/identity_restore.go` | `ffe38d24bf0b374f6d611cd58addd4423fb387950d29e5665d56ff78da136a19` | 5202 |
+| `services/control-plane/model/identity_restore_test.go` | `a74c7514503e92b02f1fbad012168c2865985652a62cecd9ad6e687230e1564f` | 21778 |
 | `services/control-plane/model/identity_store.go` | `7eeb516eb1b2b4ed18761e0791acc352209da5c568f21d339c29d3d08bac4b94` | 10141 |
 | `services/control-plane/model/identity_store_test.go` | `23be08ff8a2d9bbae4a1fb103cabdc3f329f25bc7e7e1b0b941f36feb1dec189` | 17693 |
 | `services/control-plane/model/identity_test.go` | `160fcc1e765f50473a5a53e8ed73233741df48f5f7b8e11361737577ad9f1004` | 18508 |
@@ -147,11 +153,12 @@ Every path is relative to the repository root and every digest is over the exact
 | `services/control-plane/model/quarantine_test.go` | `9dcd5af9f81d7ccd689e2c59258f72121cfa9f2ba8a39425ef5f505dc5cf3b0f` | 5477 |
 | `services/control-plane/model/record.go` | `05d8e961a8dae7d599e2f1879b5b46210ecd0b2388d31f805d93240b39c9ea71` | 13980 |
 | `services/control-plane/model/record_test.go` | `3e7f70d2f5514f3237b2d951d1df5dacc2350b1125199728dcb9b9e80f44750d` | 6974 |
-| `services/control-plane/model/restore.go` | `805eea736fa86decb7684b16fcb49d1380547de9b764e70622972ef886c610f0` | 7493 |
-| `services/control-plane/model/restore_test.go` | `b0b05ac0d2c9909ae457bad6f18351c3f84528b3b4ad0d3ab5c1f973ad0ddb95` | 23142 |
+| `services/control-plane/model/restore.go` | `15ee03ca92cc3c6edf5f5943011fa3d136bf6567655285ae03cbfd9d201fb8f2` | 7908 |
+| `services/control-plane/model/restore_test.go` | `a38251e30344a8c6f8adf604a6d32b48cd535a12660e7c39a70d0b3fb687c273` | 23819 |
 | `services/control-plane/model/rollback_test.go` | `8b40eacee114fe09a9141ccb8c3f128ad4e8fc0d2d9b4d8c4ef80737dd3fc08a` | 6497 |
 | `services/control-plane/model/store.go` | `a1623c4df36516e527d2acca460933cb0af469fb10ddc2b2cf41ec2ebe333095` | 9659 |
-| `services/control-plane/model/store_read.go` | `ac73ed53e4e4bde9c54aa2559900be18d59ce0e538c940b0f4e50ef54f96efca` | 9280 |
+| `services/control-plane/model/store_read.go` | `02747ff8c849febde7c85774b88d12a5dcb37d4e8e92a50c10999ae6d50acaec` | 10816 |
+| `services/control-plane/model/store_read_bulk_test.go` | `8bf29a6d09a263c3d33f85a16af473643c57a253d3fa421e88e4ba4c8235334c` | 8930 |
 | `services/control-plane/model/store_sql.go` | `740ab7cf22bcebdc20733fe71065a3ef2f6bcbb6799320792ff82456ec7d9247` | 9149 |
 | `services/control-plane/model/store_test.go` | `7e7c027a25ec73bae8aee4f1e7b03e68ee61a8a05440237babb9631f5953139d` | 33778 |
 | `services/control-plane/model/structure_test.go` | `fee1d5c9cb37ee83673e4627fea9d3266849ebfe673e59cf6c9897ca4011ccd4` | 9744 |

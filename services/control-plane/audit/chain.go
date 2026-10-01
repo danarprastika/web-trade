@@ -74,14 +74,37 @@ func (c *Chain) Append(records []Record) ([]Record, error) {
 	staged := make(map[string]partitionState, len(c.partitions))
 	accepted := make([]Record, 0, len(records))
 	out := make([]Record, 0, len(records))
+	// inBatch is the identities this batch already carries. c.byAuditID cannot serve that
+	// purpose: it is only written in the commit loop below, so until a batch commits, two
+	// records sharing an audit_id are two records as far as the duplicate-delivery check is
+	// concerned.
+	inBatch := make(map[string]int, len(records))
 
-	for _, r := range records {
+	for i, r := range records {
 		// Only the chain-assigned field is left unchecked here; the sequence is checked
 		// against the partition's state below, and re-validated in full by NewRecord once
 		// it has been assigned.
 		if err := r.validateFields(); err != nil {
 			return nil, err
 		}
+
+		// A repeated audit_id inside one batch. Refused whether or not the two records agree:
+		// an identity carries one record, and the batch is written as a unit, so the pair
+		// would be exported durably at consecutive sequences. Restore refuses a repeated
+		// audit_id on the way back in, which would leave the partition permanently
+		// un-rehydratable - evidence that cannot be loaded again is not evidence.
+		//
+		// This is the within-batch case only. A redelivery in a later batch still falls
+		// through to the c.byAuditID check below and is still idempotent, because a retry
+		// is a retry of an earlier delivery rather than a second record in one batch.
+		if first, seen := inBatch[r.AuditID]; seen {
+			return nil, reject(contracts.CodeConflict,
+				"audit_id %s appears twice in one batch, at positions %d and %d; one identity "+
+					"carries one record. Accepted, both would be stored at consecutive "+
+					"sequences and this archive could never be rehydrated again",
+				r.AuditID, first, i)
+		}
+		inBatch[r.AuditID] = i
 
 		// Duplicate delivery. The same record arriving twice is one record; the same
 		// identity carrying different content is a conflict that must not be resolved

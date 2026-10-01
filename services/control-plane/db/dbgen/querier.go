@@ -142,6 +142,20 @@ type Querier interface {
 	// models must never appear in a serving set, and the exclusion belongs next to the schema.
 	ListActiveModels(ctx context.Context) ([]ModelRegistry, error)
 	//
+	// Every transition applied to any model, oldest first.
+	//
+	// This reconstructs each model's lifecycle from recorded applications rather than from the
+	// current state, so a reader can see the path taken and not only where it ended up. Ordered
+	// oldest first because the sequence *is* the information; reversing it would make the list
+	// unreadable while still looking plausible.
+	//
+	// Deliberately one query for the whole ledger rather than one per model. The rehydration
+	// reader restores every model, so the per-model form made startup cost one round trip per
+	// registered model, strictly sequential, and a registry with a few thousand models then spent
+	// startup waiting on the network rather than reading. Ordering within a model is unchanged, so
+	// a caller that cares about one model's path reads the same order out of this list.
+	ListAllIdempotency(ctx context.Context) ([]ModelTransitionIdempotency, error)
+	//
 	// Every registered model, in every lifecycle state, for startup rehydration.
 	//
 	// ListActiveModels is not a substitute. It is deliberately blind to the terminal states, which
@@ -184,14 +198,6 @@ type Querier interface {
 	ListAuditRecordsInPartitionRange(ctx context.Context, arg ListAuditRecordsInPartitionRangeParams) ([]AuditRecord, error)
 	ListCorrectionsForEntry(ctx context.Context, correctsEntryID sql.NullString) ([]LedgerEntry, error)
 	ListEntriesByCorrelation(ctx context.Context, correlationID string) ([]LedgerEntry, error)
-	//
-	// Every transition applied to one model, oldest first.
-	//
-	// This reconstructs the model's lifecycle from recorded applications rather than from the
-	// current state, so a reader can see the path taken and not only where it ended up. Ordered
-	// oldest first because the sequence *is* the information; reversing it would make the list
-	// unreadable while still looking plausible.
-	ListIdempotencyForModel(ctx context.Context, modelID string) ([]ModelTransitionIdempotency, error)
 	//
 	// Every identity currently serving one exact model version.
 	//

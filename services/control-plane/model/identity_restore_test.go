@@ -44,7 +44,7 @@ func TestARevokedIdentityCannotBeReMintedAfterARestart(t *testing.T) {
 		t.Fatalf("RevokeContext: %v", err)
 	}
 
-	restored, err := RehydratedWorkloadRegistry(identityClock(), store, store)
+	restored, err := RehydratedWorkloadRegistry(context.Background(), identityClock(), store, store)
 	if err != nil {
 		t.Fatalf("RehydratedWorkloadRegistry: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestARevokedIdentityCannotBeReMintedAfterARestart(t *testing.T) {
 
 func TestALiveIdentitySurvivesARestart(t *testing.T) {
 	live, store := issuedRegistry(t)
-	restored, err := RehydratedWorkloadRegistry(identityClock(), store, store)
+	restored, err := RehydratedWorkloadRegistry(context.Background(), identityClock(), store, store)
 	if err != nil {
 		t.Fatalf("RehydratedWorkloadRegistry: %v", err)
 	}
@@ -324,7 +324,7 @@ func TestRehydrationRefusesASnapshotTheRegistryCannotRestore(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store := NewMemoryIdentityStore()
-			registry, err := RehydratedWorkloadRegistry(identityClock(), store,
+			registry, err := RehydratedWorkloadRegistry(context.Background(), identityClock(), store,
 				malformedSnapshotReader{snapshot: tc.snapshot})
 			if err == nil {
 				t.Fatal("rehydrating from a snapshot the registry cannot restore must fail; " +
@@ -347,17 +347,59 @@ func TestLoadIdentitySnapshotPropagatesAReadFailure(t *testing.T) {
 	}
 	// And a restore that cannot read must fail rather than produce an empty registry, which
 	// would report no revoked identity as revoked.
-	if _, err := RehydratedWorkloadRegistry(identityClock(), store, store); !errors.Is(err, want) {
+	if _, err := RehydratedWorkloadRegistry(context.Background(), identityClock(), store, store); !errors.Is(err, want) {
 		t.Fatalf("a failed load must be returned rather than producing an empty registry, got %v", err)
 	}
 }
 
 func TestRehydratedWorkloadRegistryRefusesAMissingReader(t *testing.T) {
 	store := NewMemoryIdentityStore()
-	if _, err := RehydratedWorkloadRegistry(identityClock(), store, nil); err == nil {
+	if _, err := RehydratedWorkloadRegistry(context.Background(), identityClock(), store, nil); err == nil {
 		t.Fatal("rehydrating without a reader would produce an empty registry, which reports " +
 			"no revoked identity as revoked")
 	}
+}
+
+// blockingIdentitySnapshotReader is an IdentitySnapshotReader that blocks indefinitely
+// on LoadIdentitySnapshot until the context is cancelled.
+type blockingIdentitySnapshotReader struct {
+	blockCh chan struct{}
+}
+
+func (b *blockingIdentitySnapshotReader) LoadIdentitySnapshot(ctx context.Context) (IdentitySnapshot, error) {
+	select {
+	case <-ctx.Done():
+		return IdentitySnapshot{}, ctx.Err()
+	case <-b.blockCh:
+		return IdentitySnapshot{}, errors.New("unblocked unexpectedly")
+	}
+}
+
+// TestRehydratedWorkloadRegistryRespectsContextDeadline verifies that a reader blocking
+// indefinitely causes RehydratedWorkloadRegistry to return a context error promptly rather
+// than hanging. This is the startup timeout guarantee documented in main.go.
+func TestRehydratedWorkloadRegistryRespectsContextDeadline(t *testing.T) {
+	store := NewMemoryIdentityStore()
+	// Populate the store so the snapshot has content to read
+	r, _ := NewWorkloadRegistryWithStore(identityClock(), store)
+	if _, err := r.MintContext(context.Background(), "wl-alpha", modelIDN(t, 0), "1.0.0",
+		ScopeServeInference); err != nil {
+		t.Fatalf("MintContext: %v", err)
+	}
+
+	blocker := &blockingIdentitySnapshotReader{blockCh: make(chan struct{})}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	_, err := RehydratedWorkloadRegistry(ctx, identityClock(), store, blocker)
+	if err == nil {
+		t.Fatal("expected context deadline exceeded, got nil")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected DeadlineExceeded, got %v", err)
+	}
+	// The context should be cancelled promptly, not after some arbitrary delay.
+	// We verify this by checking the test didn't time out (50ms deadline vs default test timeout).
 }
 
 func TestLoadIdentitySnapshotIsStableAcrossRuns(t *testing.T) {

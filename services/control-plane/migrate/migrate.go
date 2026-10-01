@@ -20,6 +20,7 @@ package migrate
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/fs"
 	"path"
@@ -153,6 +154,49 @@ func (e ErrDrift) Error() string {
 		e.Version, e.Recorded, e.Repository,
 	)
 }
+
+// Option narrows a plan.
+//
+// The zero state is the unbounded plan, so a caller that asks for nothing keeps the whole
+// applied set. That is deliberate rather than merely convenient: an unbounded down run is the
+// behaviour this package shipped with, and narrowing it must not narrow it for everyone.
+type Option func(*planOptions)
+
+type planOptions struct {
+	// to is the version a down plan reverts down to. Zero means no bound.
+	to int
+}
+
+// DownTo bounds a down plan to the applied migrations above version.
+//
+// The bound exists because an unbounded down reverts the entire applied set, and on the real
+// set that drops the ledger, the audit records, and every authz table CASCADE. An operator who
+// has just shipped one bad migration wants that migration back, not an empty database: the
+// failure this prevents is a rollback that destroys data rather than restoring the schema the
+// release before it ran on.
+//
+// The bound is a floor, not a target to search for: the plan is the applied migrations above
+// version, newest first. Everything at or below version is left alone even when it is applied.
+func DownTo(version int) Option {
+	return func(o *planOptions) {
+		if version <= 0 {
+			// Versions start at 1, so a non-positive version carries no information rather
+			// than meaning "revert everything". The command refuses it explicitly, where the
+			// operator can see the message; here it is simply the absence of a bound.
+			return
+		}
+		o.to = version
+	}
+}
+
+// ErrTarget is returned when a requested revert bound cannot be honoured.
+//
+// It is distinct from a drift error and from a plan error because the fault is not in the
+// database or in the repository: the operator asked to revert to a version the database is not
+// in a position to be reverted to. Rounding to a nearby version instead would revert more or
+// less than was asked for, which is the one outcome a rollback must never produce, so the
+// request is refused and named rather than approximated.
+var ErrTarget = errors.New("the requested revert target cannot be used")
 
 // downMarker separates the up body from the down body inside one file.
 //
@@ -366,7 +410,20 @@ func (p Plan) verb() string {
 }
 
 // Plan computes the run against a known applied-set ledger.
-func (s Set) Plan(d Direction, applied map[int]bool) (Plan, error) {
+//
+// The options narrow what the plan covers; see Option. The reversal check at the end applies
+// to the steps the plan actually contains, so a bounded revert is only refused when a
+// migration it would revert is irreversible, not because some migration it would leave in
+// place is.
+func (s Set) Plan(d Direction, applied map[int]bool, opts ...Option) (Plan, error) {
+	var o planOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
+	if o.to > 0 && d != Down {
+		return Plan{}, fmt.Errorf("%w: a revert target applies to a down run, not to %q", ErrTarget, d)
+	}
+
 	p := Plan{Direction: d}
 	switch d {
 	case Up:
@@ -376,10 +433,21 @@ func (s Set) Plan(d Direction, applied map[int]bool) (Plan, error) {
 			}
 		}
 	case Down:
+		if err := s.checkTarget(o.to, applied); err != nil {
+			return Plan{}, err
+		}
 		for i := len(s.Applied) - 1; i >= 0; i-- {
-			if applied[s.Applied[i].Version] {
-				p.Steps = append(p.Steps, s.Applied[i])
+			m := s.Applied[i]
+			if !applied[m.Version] {
+				continue
 			}
+			if o.to > 0 && m.Version <= o.to {
+				// Versions ascend, so the first applied migration at or below the bound ends
+				// the suffix. Everything applied above it is reverted; nothing below it is
+				// touched, which is the whole point of the bound.
+				break
+			}
+			p.Steps = append(p.Steps, m)
 		}
 	case Status:
 		for _, m := range s.Applied {
@@ -405,4 +473,33 @@ func (s Set) Plan(d Direction, applied map[int]bool) (Plan, error) {
 		}
 	}
 	return p, nil
+}
+
+// checkTarget refuses a bound the database cannot be reverted to.
+//
+// Two refusals and no third. A version the repository does not have is a typo or a version
+// from another branch, and a version the database has not applied is a version that is
+// already reverted or was never applied. Both are refused rather than resolved, because the
+// nearest sensible-looking interpretation of a wrong target is a rollback that reverts more
+// than the operator asked for.
+func (s Set) checkTarget(version int, applied map[int]bool) error {
+	if version <= 0 {
+		return nil
+	}
+	if _, ok := s.Version(version); !ok {
+		newest := 0
+		if len(s.Applied) > 0 {
+			newest = s.Applied[len(s.Applied)-1].Version
+		}
+		return fmt.Errorf("%w: migration %06d is not in the repository set; "+
+			"the newest migration here is %06d, so there is nothing to revert down to %06d",
+			ErrTarget, version, newest, version)
+	}
+	if !applied[version] {
+		return fmt.Errorf("%w: migration %06d is in the repository but is not in the "+
+			"database's applied set, so the database is already below it or was never "+
+			"migrated that far; revert to a version the applied set actually contains",
+			ErrTarget, version)
+	}
+	return nil
 }

@@ -406,6 +406,55 @@ func (q *Queries) ListActiveModels(ctx context.Context) ([]ModelRegistry, error)
 	return items, nil
 }
 
+const listAllIdempotency = `-- name: ListAllIdempotency :many
+SELECT idempotency_scope, idempotency_key, request_fingerprint, model_id, from_state, to_state, audit_id, applied_at_utc FROM model_transition_idempotency
+ORDER BY model_id, applied_at_utc, idempotency_scope, idempotency_key
+`
+
+// Every transition applied to any model, oldest first.
+//
+// This reconstructs each model's lifecycle from recorded applications rather than from the
+// current state, so a reader can see the path taken and not only where it ended up. Ordered
+// oldest first because the sequence *is* the information; reversing it would make the list
+// unreadable while still looking plausible.
+//
+// Deliberately one query for the whole ledger rather than one per model. The rehydration
+// reader restores every model, so the per-model form made startup cost one round trip per
+// registered model, strictly sequential, and a registry with a few thousand models then spent
+// startup waiting on the network rather than reading. Ordering within a model is unchanged, so
+// a caller that cares about one model's path reads the same order out of this list.
+func (q *Queries) ListAllIdempotency(ctx context.Context) ([]ModelTransitionIdempotency, error) {
+	rows, err := q.db.QueryContext(ctx, listAllIdempotency)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ModelTransitionIdempotency{}
+	for rows.Next() {
+		var i ModelTransitionIdempotency
+		if err := rows.Scan(
+			&i.IdempotencyScope,
+			&i.IdempotencyKey,
+			&i.RequestFingerprint,
+			&i.ModelID,
+			&i.FromState,
+			&i.ToState,
+			&i.AuditID,
+			&i.AppliedAtUtc,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAllModels = `-- name: ListAllModels :many
 SELECT model_id, version, owner, author, training_dataset_fingerprint, code_revision, feature_specification, evaluation_results, limitations, approval_record, deployment_scope, monitoring_policy, rollback_artifact, state, registered_at_utc, last_audit_id, updated_by, updated_at_utc FROM model_registry ORDER BY model_id
 `
@@ -530,50 +579,6 @@ func (q *Queries) ListAllWorkloadRevocations(ctx context.Context) ([]WorkloadRev
 			&i.Reason,
 			&i.EvidenceRef,
 			&i.RevokedBy,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listIdempotencyForModel = `-- name: ListIdempotencyForModel :many
-SELECT idempotency_scope, idempotency_key, request_fingerprint, model_id, from_state, to_state, audit_id, applied_at_utc FROM model_transition_idempotency
-WHERE model_id = $1
-ORDER BY applied_at_utc, idempotency_scope, idempotency_key
-`
-
-// Every transition applied to one model, oldest first.
-//
-// This reconstructs the model's lifecycle from recorded applications rather than from the
-// current state, so a reader can see the path taken and not only where it ended up. Ordered
-// oldest first because the sequence *is* the information; reversing it would make the list
-// unreadable while still looking plausible.
-func (q *Queries) ListIdempotencyForModel(ctx context.Context, modelID string) ([]ModelTransitionIdempotency, error) {
-	rows, err := q.db.QueryContext(ctx, listIdempotencyForModel, modelID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ModelTransitionIdempotency{}
-	for rows.Next() {
-		var i ModelTransitionIdempotency
-		if err := rows.Scan(
-			&i.IdempotencyScope,
-			&i.IdempotencyKey,
-			&i.RequestFingerprint,
-			&i.ModelID,
-			&i.FromState,
-			&i.ToState,
-			&i.AuditID,
-			&i.AppliedAtUtc,
 		); err != nil {
 			return nil, err
 		}

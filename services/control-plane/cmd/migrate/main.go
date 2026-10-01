@@ -14,7 +14,18 @@
 //
 //	0  the requested direction completed, or a dry run found nothing to refuse
 //	1  the run failed, or the database disagrees with the repository
-//	2  the command could not run (no DATABASE_URL, missing migrations, database unreachable)
+//	2  the command could not run (no DATABASE_URL, missing migrations, unusable --to,
+//	   unknown direction, database unreachable)
+//
+// `-direction status` is read-only. It reports the applied set, or reports that nothing is
+// applied, and on a database that has never been migrated it says so without creating
+// anything -- which is also why it is the direction that works against a replica or a
+// read-only connection.
+//
+// `-direction down` reverts the whole applied set unless `-to` bounds it. The unbounded form
+// is the release-gate rehearsal and is unchanged; `-to <version>` reverts only the applied
+// migrations above that version, which is what an operator wants after a bad deploy when the
+// alternative is dropping the ledger CASCADE.
 package main
 
 import (
@@ -45,12 +56,40 @@ func run() int {
 	dryRun := flag.Bool("dry-run", false, "print the plan without touching the database")
 	timeout := flag.Duration("timeout", 5*time.Minute,
 		"how long the whole run may take before it is abandoned")
+	to := flag.Int("to", 0, "for -direction down: revert only the applied migrations above "+
+		"this version, leaving everything at or below it applied; default 0 means the whole "+
+		"applied set")
 	flag.Parse()
 
 	parsed := migrate.Direction(*direction)
 	if !parsed.Valid() {
 		fmt.Fprintf(os.Stderr, "unknown direction %q; use up, down, or status\n", *direction)
 		return 2
+	}
+
+	// Whether -to was given is tracked apart from its value, because the zero value is also
+	// the unbounded default: an explicit "-to 0" names a version that cannot exist, and it is
+	// refused rather than being indistinguishable from leaving the flag off.
+	givenTo := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "to" {
+			givenTo = true
+		}
+	})
+
+	// The bound is checked before the database is touched, because a bound that cannot mean
+	// anything on this direction is a typo and reporting a typo should not require a reachable
+	// database. The migrate package refuses the same thing again while planning, so the rule
+	// holds for any caller and not only for this one.
+	if givenTo {
+		switch {
+		case *to < 1:
+			fmt.Fprintf(os.Stderr, "-to %d is not a migration version; versions are positive\n", *to)
+			return 2
+		case parsed != migrate.Down:
+			fmt.Fprintf(os.Stderr, "-to applies to -direction down, not to %s\n", parsed)
+			return 2
+		}
 	}
 
 	root, err := findMigrations(*dir)
@@ -98,15 +137,16 @@ func run() int {
 	}
 
 	store := migrate.NewSQLStore(db)
-	if err := store.Ensure(ctx); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 2
-	}
 
-	runner := &migrate.Runner{Set: set, Store: store, Out: os.Stdout}
-
+	// Status comes before Ensure, and not for tidiness. Ensure is DDL -- CREATE SCHEMA and
+	// CREATE TABLE -- and a status run is a question, not a change: called first, it made the
+	// read-only direction mutate the database it was asked to inspect and fail with exit 2 on
+	// a replica or a read-only connection, reporting "could not run" about a run that had
+	// asked for nothing.
 	if parsed == migrate.Status {
-		applied, err := store.Applied(ctx)
+		// Status rather than Applied: a database nobody has migrated yet has no applied-set
+		// table, and "no migrations applied" is the true answer for one rather than an error.
+		applied, err := store.Status(ctx)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
@@ -114,6 +154,13 @@ func run() int {
 		fmt.Print(migrate.DescribeApplied(applied))
 		return 0
 	}
+
+	if err := store.Ensure(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+
+	runner := &migrate.Runner{Set: set, Store: store, Out: os.Stdout, To: *to}
 
 	result, err := runner.Run(ctx, parsed)
 	if err != nil {
@@ -125,6 +172,11 @@ func run() int {
 		if errors.As(err, &driftErr) {
 			fmt.Fprintln(os.Stderr, "resolve the drift before running any migration; "+
 				"re-running will not make the two records agree")
+		}
+		// A revert target the database cannot be reverted to is an unusable invocation rather
+		// than a failed run, so it exits 2 with the rest of the ways this command cannot run.
+		if errors.Is(err, migrate.ErrTarget) {
+			return 2
 		}
 		// Whatever got applied before the failure did, and the operator needs to know how
 		// much of the set is now in place.

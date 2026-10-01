@@ -136,10 +136,11 @@ func sortSnapshot(s *Snapshot) {
 //
 // ListAllModels rather than ListActiveModels, deliberately: the active set is blind to
 // retired and quarantined models, which are exactly the rows a restart must remember. The
-// ledger is read per model because that is how ListIdempotencyForModel is declared.
+// ledger is read in one query for the same reason: rehydration restores every model, so a
+// per-model read made startup cost one round trip per registered model, strictly sequential.
 type SQLSnapshotQuerier interface {
 	ListAllModels(ctx context.Context) ([]dbgen.ModelRegistry, error)
-	ListIdempotencyForModel(ctx context.Context, modelID string) ([]dbgen.ModelTransitionIdempotency, error)
+	ListAllIdempotency(ctx context.Context) ([]dbgen.ModelTransitionIdempotency, error)
 }
 
 // SQLSnapshotReader is a SnapshotReader over the generated accessors.
@@ -168,45 +169,68 @@ func NewSQLSnapshotReaderInTx(q SQLSnapshotQuerier) (*SQLSnapshotReader, error) 
 }
 
 // LoadSnapshot reads the whole registry and every spent idempotency key.
+//
+// Exactly two round trips, whatever the size of the registry. The ledger arrives in one piece
+// and is grouped here, so a snapshot is one network conversation rather than one per registered
+// model - the cost of a restart then depends on how much history there is, not on how many
+// models happen to be registered.
+//
+// Rows are attributed to a model only when that model is in the registry, which is what the
+// per-model form did by construction: it could only ever ask about a model it had already read.
+// A ledger row naming a model the registry does not contain is therefore dropped rather than
+// reported, exactly as before. That is worth naming rather than quietly fixing here, because
+// dropping it means such a key is not reconstructed as spent, so a retry of it would be applied
+// a second time. Restore refuses a snapshot that names an unknown model, so the inconsistency
+// is not silent once the row is in the snapshot at all - but whether the reader should hand such
+// a row over for Restore to reject is a separate question from how many queries to make, and it
+// is not answered by this change.
 func (r *SQLSnapshotReader) LoadSnapshot(ctx context.Context) (Snapshot, error) {
 	rows, err := r.q.ListAllModels(ctx)
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("listing every model in the registry: %w", err)
 	}
+	ledger, err := r.q.ListAllIdempotency(ctx)
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("listing the applied-transition ledger: %w", err)
+	}
+
+	// The registry's own row set, so a ledger row can be attributed without a second pass over
+	// the models. Built before either list is consumed because a model registered with no
+	// transitions still contributes an entry to Models.
+	registered := make(map[string]struct{}, len(rows))
 	snap := Snapshot{
 		Models:      make([]ModelSnapshot, 0, len(rows)),
-		Idempotency: make([]AppliedEntry, 0, len(rows)),
+		Idempotency: make([]AppliedEntry, 0, len(ledger)),
 	}
 	for _, row := range rows {
 		model, err := snapshotFrom(row)
 		if err != nil {
 			return Snapshot{}, err
 		}
+		registered[row.ModelID] = struct{}{}
 		snap.Models = append(snap.Models, model)
+	}
 
-		ledger, err := r.q.ListIdempotencyForModel(ctx, row.ModelID)
+	for _, entry := range ledger {
+		if _, ok := registered[entry.ModelID]; !ok {
+			continue
+		}
+		id, err := contracts.ParseIdentifier(entry.ModelID)
 		if err != nil {
-			return Snapshot{}, fmt.Errorf("listing idempotency entries for model %s: %w",
-				row.ModelID, err)
+			return Snapshot{}, fmt.Errorf("idempotency entry %s/%s names model %q, which "+
+				"is not an identifier: %w", entry.IdempotencyScope, entry.IdempotencyKey,
+				entry.ModelID, err)
 		}
-		for _, entry := range ledger {
-			id, err := contracts.ParseIdentifier(entry.ModelID)
-			if err != nil {
-				return Snapshot{}, fmt.Errorf("idempotency entry %s/%s names model %q, which "+
-					"is not an identifier: %w", entry.IdempotencyScope, entry.IdempotencyKey,
-					entry.ModelID, err)
-			}
-			snap.Idempotency = append(snap.Idempotency, AppliedEntry{
-				Scope:       entry.IdempotencyScope,
-				Key:         entry.IdempotencyKey,
-				Fingerprint: Digest(entry.RequestFingerprint),
-				ModelID:     id,
-				From:        State(entry.FromState),
-				To:          State(entry.ToState),
-				AuditID:     entry.AuditID,
-				At:          entry.AppliedAtUtc,
-			})
-		}
+		snap.Idempotency = append(snap.Idempotency, AppliedEntry{
+			Scope:       entry.IdempotencyScope,
+			Key:         entry.IdempotencyKey,
+			Fingerprint: Digest(entry.RequestFingerprint),
+			ModelID:     id,
+			From:        State(entry.FromState),
+			To:          State(entry.ToState),
+			AuditID:     entry.AuditID,
+			At:          entry.AppliedAtUtc,
+		})
 	}
 	sortSnapshot(&snap)
 	return snap, nil

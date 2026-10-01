@@ -291,14 +291,19 @@ INSERT INTO model_transition_idempotency (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
 
--- name: ListIdempotencyForModel :many
+-- name: ListAllIdempotency :many
 --
--- Every transition applied to one model, oldest first.
+-- Every transition applied to any model, oldest first.
 --
--- This reconstructs the model's lifecycle from recorded applications rather than from the
+-- This reconstructs each model's lifecycle from recorded applications rather than from the
 -- current state, so a reader can see the path taken and not only where it ended up. Ordered
 -- oldest first because the sequence *is* the information; reversing it would make the list
 -- unreadable while still looking plausible.
+--
+-- Deliberately one query for the whole ledger rather than one per model. The rehydration
+-- reader restores every model, so the per-model form made startup cost one round trip per
+-- registered model, strictly sequential, and a registry with a few thousand models then spent
+-- startup waiting on the network rather than reading. Ordering within a model is unchanged, so
+-- a caller that cares about one model's path reads the same order out of this list.
 SELECT * FROM model_transition_idempotency
-WHERE model_id = $1
-ORDER BY applied_at_utc, idempotency_scope, idempotency_key;
+ORDER BY model_id, applied_at_utc, idempotency_scope, idempotency_key;
