@@ -1,5 +1,30 @@
 # Parked: the pgx-backed migration store and `cmd/migrate`
 
+> **SUPERSEDED by EV-060. Kept as the record of a decision that was later shown to rest on an
+> untested assumption.**
+>
+> This document argued that no Go PostgreSQL driver could be added, and used that as the reason
+> to park working code. EV-060 tested driver candidates against the unmodified toolchain gate
+> instead of reasoning about them, and found `github.com/lib/pq v1.10.9` passes with an empty
+> transitive dependency closure. The constraint was real, but it was specific to pgx — the
+> reasoning generalised one candidate's property into a claim about all candidates, and nobody
+> checked.
+>
+> What happened as a result:
+>
+> - `github.com/lib/pq v1.10.9` is now a dependency of `services/control-plane`.
+> - The store was ported to `database/sql` as `services/control-plane/migrate/store_sql.go`
+>   (`migrate.SQLStore`), replacing `migrate.PgStore`; `pgstore.go` here is not in the build.
+> - The CLI was ported to `services/control-plane/cmd/migrate` and runs in CI; the
+>   `cmd-migrate/main.go` here is not in the build.
+> - `services/control-plane/integration` round-trips the durable adapters against PostgreSQL
+>   17.11, and `cmd/control-plane` rebuilds its stack from that database on startup.
+>
+> The reasoning below is left intact rather than rewritten. It is what the project believed, why
+> it believed it, and the fact that a careful argument about one dependency generalised into a
+> false claim about all of them is worth more to a later reader than a corrected summary would be.
+> Nothing below should be read as current.
+
 These two files are complete and reviewed, and they are not in the build. They are parked here
 because the repository's own toolchain gate refuses the dependency they need, and relaxing
 that gate to accommodate a dependency chosen during this work item is not a decision the work

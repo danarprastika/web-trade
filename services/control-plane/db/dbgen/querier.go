@@ -142,6 +142,35 @@ type Querier interface {
 	// models must never appear in a serving set, and the exclusion belongs next to the schema.
 	ListActiveModels(ctx context.Context) ([]ModelRegistry, error)
 	//
+	// Every registered model, in every lifecycle state, for startup rehydration.
+	//
+	// ListActiveModels is not a substitute. It is deliberately blind to the terminal states, which
+	// is correct for a serving set and exactly wrong for a restore: a journal rebuilt only from
+	// active models has no memory that a model was ever retired, so the model looks unregistered
+	// and can be registered again from scratch. Terminal states are the rows that most have to
+	// survive a restart.
+	//
+	// Unbounded, unlike the audit reads, because this is bounded by the number of models rather
+	// than by a retention period, and because a restore that silently loaded a prefix of the
+	// registry would be worse than one that took the whole table.
+	ListAllModels(ctx context.Context) ([]ModelRegistry, error)
+	//
+	// Every workload identity ever issued, for startup rehydration.
+	//
+	// ListValidIdentitiesForModelVersion is not a substitute: it filters to currently valid ones,
+	// which is right for a serving check and exactly wrong for a restore, because an expired or
+	// revoked identity that is not loaded here becomes mintable again. The revocation check in the
+	// registry is a lookup in a map that only exists if the revocations were loaded too, so a
+	// partial load of either table silently removes a security control.
+	ListAllWorkloadIdentities(ctx context.Context) ([]WorkloadIdentity, error)
+	//
+	// Every revocation, for startup rehydration.
+	//
+	// Unbounded for the same reason as the identity list: this table is the authority on which
+	// identities must never be re-minted, and loading a prefix of it means the identities not
+	// covered by that prefix have no recorded revocation.
+	ListAllWorkloadRevocations(ctx context.Context) ([]WorkloadRevocation, error)
+	//
 	// The retained record of a deletion. Deleting evidence is permitted under a two-person
 	// approval after expiry, and the fact that it happened is itself kept, so this table is
 	// append-only in the same way the evidence it describes is.

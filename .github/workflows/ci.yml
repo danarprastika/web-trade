@@ -73,6 +73,19 @@ jobs:
         # because it is trusted. The negative cases live in tests/ci.
         run: python -m pytest tests/ci -q
 
+      - name: every run block in this workflow is valid bash
+        # This workflow is the repository's definition of what must pass, so a syntax error in one
+        # of its own steps is the most expensive cheap failure available: it does not fail here,
+        # it fails minutes into a later job on a runner, after the build cache is warm and the
+        # developer has moved on.
+        #
+        # It runs in the toolchain job because that is the first job and it gates everything else,
+        # so a broken step is reported before the six-module build and test cycle has spent its
+        # time. The check parses with `bash -n` and executes nothing, so it is fast and has no
+        # side effects; it skips rather than fails when bash is absent, because a missing
+        # interpreter must not be reported as a broken workflow.
+        run: python scripts/check_workflow_bash.py
+
   # ---------------------------------------------------------------------------
   # G0 — Specification Integrity.
   # ---------------------------------------------------------------------------
@@ -228,6 +241,38 @@ jobs:
           while read -r m; do
             (cd "$m" && go mod verify)
           done < modules.txt
+
+      - name: drain tests can fail
+        # The three drain tests in cmd/control-plane are what prove G5.7's graceful shutdown
+        # ordering, and nothing else in the pipeline establishes that they can fail. A refactor
+        # that made one of them assert nothing - against a local, or on a channel nobody closes -
+        # would leave the suite green and the claim unverified.
+        #
+        # This is not hypothetical here. In the same work that added the drain, an earlier draft
+        # of the in-flight test passed for the wrong reason: its URL helper omitted the scheme,
+        # so every request errored before it was sent and the assertion that the listener had
+        # stopped accepting would have passed on a request that never left the process. A test
+        # that cannot fail is worse than no test, because it is believed.
+        #
+        # The gate breaks serve() on purpose - graceful Shutdown replaced by a hard Close, the
+        # exact defect the drain prevents - and requires the tests to fail. It restores the file
+        # and verifies the restore, and it refuses to run at all if the mutation cannot be applied,
+        # so it cannot pass by leaving the code untouched.
+        run: python scripts/mutation_check_drain.py
+
+      - name: the G5 gate report is current
+        # The G5 report is what a reviewer reads to decide that the gate passed. Until this step
+        # existed it was a snapshot with nothing tying it to the code it describes: its digests
+        # were correct when written and went stale silently, while the report kept asserting a
+        # PASS verdict and a per-criterion mechanically_verified flag. A stale gate report is
+        # worse than stale generated code, because it keeps looking authoritative while being
+        # wrong about the current tree.
+        #
+        # The comparison is byte-for-byte against a full regeneration, not a digest
+        # recomputation, so a hand-edited verdict is caught as well as a changed source file.
+        # It is possible because the report is deterministic: its executed_at is a constant in
+        # the generator, not a clock read.
+        run: python scripts/generate_g5_gate_report.py --check
 
   # ---------------------------------------------------------------------------
   # Operator console: typecheck, lint, build.
@@ -562,14 +607,36 @@ jobs:
         # because a migration that cannot apply, or cannot be reverted, is a rollback-blocking
         # defect and must be caught before the branch is protected.
         #
-        # This calls the rehearsal rather than `go run ./services/control-plane/cmd/migrate`.
-        # That command needs a PostgreSQL driver, and no Go driver can be added: pgx pulls
+        # This spins up its own disposable PostgreSQL and proves the whole set applies, reverts
+        # to a clean catalog, and applies again. That is a different property from the step
+        # below: this one destroys its database afterwards, so it says nothing about whether
+        # the long-lived integration database has a schema. Both are kept, and the reason they
+        # are no longer alternatives is recorded here rather than left to be rediscovered.
+        #
+        # It used to be the only option. The comment it replaced argued that cmd/migrate could
+        # not run because no Go PostgreSQL driver could be admitted: pgx pulls
         # github.com/jackc/pgservicefile, which has only pseudo-versions, and
-        # scripts/verify_toolchain.py refuses those as unpinned references. The rehearsal
-        # proves the same property -- the whole set applies, reverts to a clean catalog, and
-        # applies again -- with no dependency the toolchain gate has to be weakened for.
-        # See .kilo/ecc/project-brain/evidence/wi-106/parked-pgx-store/README.md.
+        # scripts/verify_toolchain.py refuses those as unpinned references. That was a real
+        # constraint and it was reasoned about rather than measured, which is how it stayed
+        # wrong. EV-060 tested candidates against the unmodified gate and found
+        # github.com/lib/pq v1.10.9 passes with an empty transitive closure, so the driver is
+        # adopted and this step is a rehearsal rather than a substitute.
         run: python scripts/rehearse_migrations.py
+
+      - name: apply migrations to the integration database
+        # The integration tests below open this service's database directly and do not create
+        # its schema; the harness expects to find tables already there. The rehearsal cannot
+        # provide them because it discards its own container on exit, so without this step the
+        # whole integration job fails on a missing relation rather than on anything about the
+        # code under test.
+        #
+        # Run through the real CLI rather than the rehearsal helper, so the command an operator
+        # runs is the command CI exercises. That includes its exit codes: a drift disagreement
+        # exits 1 and a configuration problem exits 2, and either fails this step.
+        #
+        # -direction up is idempotent against an already-current database, so re-running the
+        # job without recreating the service is not a failure.
+        run: go run ./services/control-plane/cmd/migrate -direction up
 
       - name: sqlc is up to date
         # A generated file that no longer matches its inputs builds fine and behaves
@@ -599,6 +666,29 @@ jobs:
         # breaks every other test that parses this workflow too.
         run: |
           "$(go env GOPATH)/bin/sqlc" vet
+
+      - name: the live database is actually reachable
+        # The integration suite skips rather than fails when DATABASE_URL is absent, so that a
+        # developer running the tag locally without a database sees a skip instead of a false
+        # failure. That is the right default and it is deliberate.
+        #
+        # The cost is that a missing or unreachable database in *this* job would skip all
+        # seventeen tests and still report success, which is worse than useless: it would certify
+        # a gate that verified nothing. The suite's own comment says a skip here means the job
+        # lost its service and the run is already failed - but nothing enforced that, it was only
+        # asserted in a comment. This step is the enforcement, and it exists because that
+        # assumption was in fact violated in local verification: the same suite was invoked with
+        # TEST_DATABASE_URL instead of DATABASE_URL, skipped entirely, printed "ok", and exited 0.
+        # A check that reports success having executed none of itself is the failure mode this
+        # repository has now recorded three times, so the invariant is checked rather than
+        # assumed.
+        run: |
+          set -euo pipefail
+          test -n "${DATABASE_URL:-}" || {
+            echo "::error::DATABASE_URL is not set; every integration test would skip and this job would pass without running any of them"
+            exit 1
+          }
+          go run ./services/control-plane/cmd/migrate -direction status
 
       - name: integration tests
         # Per module, for the same workspace reason as the go job: a root-relative

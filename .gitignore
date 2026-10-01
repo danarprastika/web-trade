@@ -70,3 +70,12 @@ Thumbs.db
 # ---- Project Brain runtime scratch (specs are tracked, scratch is not) ----
 .kilo/ecc/project-brain/*.tmp
 .kilo/ecc/project-brain/*.append.tmp
+  
+# ---- Driver-pinning probe modules (evidence input, not product code) ----
+# EV-060 established which PostgreSQL drivers satisfy scripts/verify_toolchain.py by building
+# each candidate in a throwaway module and running the real gate against it. Those modules are
+# inputs to that measurement rather than anything the build compiles: each has its own go.mod
+# with a deliberately unpinned or pseudo-versioned require, so including one in the workspace
+# would be an attempt to admit exactly what the gate exists to refuse. Kept on disk so
+# scripts/probe_driver_pinning.py can re-verify EV-060 rather than trusting the record.
+_driver_probe/

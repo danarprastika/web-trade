@@ -75,6 +75,21 @@ SELECT * FROM model_registry
 WHERE state NOT IN ('RETIRED', 'QUARANTINED')
 ORDER BY model_id;
 
+-- name: ListAllModels :many
+--
+-- Every registered model, in every lifecycle state, for startup rehydration.
+--
+-- ListActiveModels is not a substitute. It is deliberately blind to the terminal states, which
+-- is correct for a serving set and exactly wrong for a restore: a journal rebuilt only from
+-- active models has no memory that a model was ever retired, so the model looks unregistered
+-- and can be registered again from scratch. Terminal states are the rows that most have to
+-- survive a restart.
+--
+-- Unbounded, unlike the audit reads, because this is bounded by the number of models rather
+-- than by a retention period, and because a restore that silently loaded a prefix of the
+-- registry would be worse than one that took the whole table.
+SELECT * FROM model_registry ORDER BY model_id;
+
 -- name: SetModelState :one
 --
 -- Record a lifecycle transition.
@@ -188,6 +203,26 @@ SELECT * FROM workload_revocations WHERE identity = $1;
 SELECT * FROM workload_revocations
 WHERE identity = $1
 ORDER BY revoked_at_utc;
+
+-- name: ListAllWorkloadIdentities :many
+--
+-- Every workload identity ever issued, for startup rehydration.
+--
+-- ListValidIdentitiesForModelVersion is not a substitute: it filters to currently valid ones,
+-- which is right for a serving check and exactly wrong for a restore, because an expired or
+-- revoked identity that is not loaded here becomes mintable again. The revocation check in the
+-- registry is a lookup in a map that only exists if the revocations were loaded too, so a
+-- partial load of either table silently removes a security control.
+SELECT * FROM workload_identities ORDER BY identity;
+
+-- name: ListAllWorkloadRevocations :many
+--
+-- Every revocation, for startup rehydration.
+--
+-- Unbounded for the same reason as the identity list: this table is the authority on which
+-- identities must never be re-minted, and loading a prefix of it means the identities not
+-- covered by that prefix have no recorded revocation.
+SELECT * FROM workload_revocations ORDER BY revoked_at_utc, identity;
 
 -- name: InsertRevocation :one
 --

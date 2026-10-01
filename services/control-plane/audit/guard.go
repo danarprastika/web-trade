@@ -11,6 +11,12 @@ import (
 // later found to have been lost, which is the only question this classification answers.
 type OperationClass string
 
+// causeEvidenceBacklog names the halt raised when accepted records are not reaching
+// durable storage. It is a constant rather than a literal at each use site because
+// Clear branches on it, and a typo in either place would silently turn a check on the
+// cause into a check that never fires.
+const causeEvidenceBacklog = "EVIDENCE_BACKLOG"
+
 const (
 	// OpReadOnly reads state and changes nothing.
 	OpReadOnly OperationClass = "READ_ONLY"
@@ -80,7 +86,7 @@ func (g *Guard) Accept(n int) error {
 		return reject(contracts.CodeValidation, "cannot accept a negative number of records")
 	}
 	if g.pending+n > g.limit {
-		g.Halt("EVIDENCE_BACKLOG",
+		g.Halt(causeEvidenceBacklog,
 			"audit export backlog reached the limit of "+itoa64(int64(g.limit))+" unexported records")
 		return reject(contracts.CodeDependencyUnavailable,
 			"audit evidence is not being exported and the backlog is at its limit of %d records; "+
@@ -114,10 +120,37 @@ func (g *Guard) Halt(cause, reason string) {
 // It is deliberately a separate, explicitly-called operation rather than something that
 // happens as a side effect of the sink recovering, so that clearing is always a decision
 // someone made and can itself be recorded.
-func (g *Guard) Clear() {
+//
+// It refuses while an evidence backlog is still outstanding. That refusal is the whole
+// reason this function returns an error, and it was added after observing that the earlier
+// unconditional Clear() was worse than no escape hatch at all: it set halted to false while
+// leaving pending at its limit, so the very next Accept re-tripped the halt. The operator
+// saw "cleared", resumed, and was halted again on the next record - and because Accept is
+// what refuses once the backlog is full, the operator could not even record the fact that
+// they had cleared, which is the one record that would have explained the interruption. A
+// control that appears to work while doing nothing is more dangerous than one that refuses.
+//
+// The check is on the cause rather than on the latch alone, because the two causes need
+// different preconditions. An EVIDENCE_BACKLOG halt means the reason to stop is that
+// evidence is unexported, so that is what must change first. A SEV-1_AUDIT_INTEGRITY halt
+// means a chain break was detected; the backlog is not the concern, and an operator
+// clearing it after reviewing the finding must not additionally be told to go and fix an
+// unrelated export backlog.
+func (g *Guard) Clear() error {
+	if !g.halted {
+		return nil
+	}
+	if g.haltCause == causeEvidenceBacklog && g.pending > 0 {
+		return reject(contracts.CodeDependencyUnavailable,
+			"audit is halted because %d accepted record(s) have not reached durable storage; "+
+				"clearing now would be undone by the next record, so export the backlog first. "+
+				"The latch stays set until the backlog is drained and Clear is called again",
+			g.pending)
+	}
 	g.halted = false
 	g.haltCause = ""
 	g.haltReason = ""
+	return nil
 }
 
 // Allow reports whether an operation of the given class may proceed.

@@ -191,6 +191,23 @@ func (c *Chain) Partitions() []string {
 // requires evidence to be queryable by correlation ID. Searching across every partition
 // matters: a workflow that crosses tenants still has one correlation ID, and the point
 // of the query is to see the whole of it.
+// RecordByAuditID returns the record carrying an audit identifier, and whether it exists.
+//
+// It is a direct index lookup rather than a scan. Append already refuses a duplicate
+// audit_id within a batch and keeps byAuditID to recognise a redelivery, so the index was
+// there before any caller needed it; what was missing was a way to ask, and the alternatives
+// are a linear scan over every record held or a string comparison against a correlation id
+// that merely happens to be related. A caller verifying that a durable registry is
+// corroborated by its evidence asks this question once per model, so it should not pay for a
+// scan to get an answer the chain is already holding.
+func (c *Chain) RecordByAuditID(auditID string) (Record, bool) {
+	if strings.TrimSpace(auditID) == "" {
+		return Record{}, false
+	}
+	r, ok := c.byAuditID[auditID]
+	return r, ok
+}
+
 func (c *Chain) ByCorrelationID(correlationID string) []Record {
 	if strings.TrimSpace(correlationID) == "" {
 		return nil

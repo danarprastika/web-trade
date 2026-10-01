@@ -301,13 +301,43 @@ func (r Record) validateFields() error {
 // them, because they are properties of the partition's state rather than of the event.
 // Passing a wrong sequence produces a record that the chain will refuse, which is the
 // intended failure mode.
+//
+// This is also the single point at which a record's canonical form is settled, which is why
+// the timestamps are normalised here rather than in TimestampFrom. A Record can be built
+// from a contracts.Timestamp directly - the fixtures in this package do exactly that - so
+// normalising in the converter would leave that path uncovered, and a record whose hash
+// includes precision the store discards is a record that cannot be read back.
 func NewRecord(r Record) (Record, error) {
 	if err := r.Validate(); err != nil {
 		return Record{}, err
 	}
+	r.OccurredAt = TimestampFrom(r.OccurredAt.Time())
+	r.RecordedAt = TimestampFrom(r.RecordedAt.Time())
 	r.RecordHash = r.ComputeHash()
 	return r, nil
 }
 
+// auditInstantResolution is the precision of an audit record's canonical instant.
+//
+// audit_records.occurred_at_utc and recorded_at_utc are declared timestamptz in 0002_audit.sql,
+// and PostgreSQL's timestamptz resolves to one microsecond. The hashed payload is the
+// canonical rendering of these fields at nine fractional digits, so a record carrying
+// nanoseconds would hash over digits that storage cannot hold: the row would come back with a
+// different value, its content would hash to something other than its stored record_hash, and
+// Restore - and any independent verifier working from the migration alone - would reject it as
+// tampering. docs/22 section 3 requires the canonical serialization to be "fixed and tested";
+// a canonical form that the storage medium silently truncates is neither.
+//
+// Truncation rather than refusal, because the discarded precision cannot survive the write
+// either way: it is already gone the moment the row lands, and refusing would reject every
+// timestamp derived from time.Now() while retaining nothing.
+const auditInstantResolution = time.Microsecond
+
 // TimestampFrom converts a time to the canonical audit timestamp.
-func TimestampFrom(t time.Time) contracts.Timestamp { return contracts.TimestampFrom(t) }
+//
+// Truncating here as well as in NewRecord is deliberate: this function is also how values
+// are read back out of storage, and normalising on the way in keeps the two directions
+// trivially idempotent.
+func TimestampFrom(t time.Time) contracts.Timestamp {
+	return contracts.TimestampFrom(t.Truncate(auditInstantResolution))
+}

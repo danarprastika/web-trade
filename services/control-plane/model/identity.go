@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -130,6 +131,13 @@ type WorkloadRegistry struct {
 	// sleeping and so that a test cannot accidentally pass because time moved.
 	now func() time.Time
 
+	// store is the durable destination for issuance and revocation. It is optional and nil
+	// means in-memory only, for the same reason as the journal's: a read-only or
+	// migration-time caller legitimately wants a registry with no durable record, while a
+	// caller that believes it has one and does not is the thing to prevent. Durable reports
+	// which it is.
+	store IdentityStore
+
 	// mu guards identities and revocations.
 	//
 	// Every method below reads or writes both maps, and several are read-modify-write
@@ -148,6 +156,15 @@ type WorkloadRegistry struct {
 
 // NewWorkloadRegistry builds a registry with an injected clock.
 func NewWorkloadRegistry(now func() time.Time) (*WorkloadRegistry, error) {
+	return NewWorkloadRegistryWithStore(now, nil)
+}
+
+// NewWorkloadRegistryWithStore builds a registry whose issuance and revocation are recorded
+// durably in store.
+//
+// A nil store is permitted and means in-memory only. See Durable for why that is a question
+// with an answer rather than a nil check at every call site.
+func NewWorkloadRegistryWithStore(now func() time.Time, store IdentityStore) (*WorkloadRegistry, error) {
 	if now == nil {
 		return nil, reject(contracts.CodeValidation, ErrIncompleteRecord,
 			"a workload registry requires a clock; an injected clock is what makes expiry "+
@@ -157,8 +174,12 @@ func NewWorkloadRegistry(now func() time.Time) (*WorkloadRegistry, error) {
 		identities:  map[string]WorkloadIdentity{},
 		revocations: map[string]Revocation{},
 		now:         now,
+		store:       store,
 	}, nil
 }
+
+// Durable reports whether this registry writes through a store.
+func (r *WorkloadRegistry) Durable() bool { return r.store != nil }
 
 // Mint issues a short-lived workload identity for one model version.
 //
@@ -168,6 +189,21 @@ func NewWorkloadRegistry(now func() time.Time) (*WorkloadRegistry, error) {
 // close every identity a compromised producer held, which is only tractable if the count is
 // small and known.
 func (r *WorkloadRegistry) Mint(
+	identity string,
+	modelID contracts.Identifier,
+	modelVersion string,
+	scope WorkloadScope,
+) (WorkloadIdentity, error) {
+	return r.MintContext(context.Background(), identity, modelID, modelVersion, scope)
+}
+
+// MintContext issues a short-lived workload identity, honouring ctx.
+//
+// Mint exists as the background-context form so the existing callers keep working. A durable
+// write is a network call, so a caller that has a context and lets this one be invented
+// cannot cancel it.
+func (r *WorkloadRegistry) MintContext(
+	ctx context.Context,
 	identity string,
 	modelID contracts.Identifier,
 	modelVersion string,
@@ -216,6 +252,19 @@ func (r *WorkloadRegistry) Mint(
 		// caller cannot mint a long-lived identity by passing a large TTL.
 		ExpiresAt: now.Add(WorkloadTTL),
 	}
+
+	// The durable write precedes the in-memory one. If it fails, the identity is not issued:
+	// handing out a credential that nothing durable records would let a workload be
+	// authenticated by this process and be invisible to every other one, which is the
+	// precise failure a shared registry exists to prevent.
+	if r.store != nil {
+		if err := r.store.InsertIdentity(ctx, issued); err != nil {
+			return WorkloadIdentity{}, reject(contracts.CodeInternal, ErrIncompleteRecord,
+				"the durable store refused to record the issuance of identity %q, so it was "+
+					"not minted: %v", identity, err)
+		}
+	}
+
 	r.identities[identity] = issued
 	return issued, nil
 }
@@ -280,6 +329,30 @@ func (r *WorkloadRegistry) Revoke(
 	reason string,
 	evidenceRef string,
 ) (Revocation, error) {
+	return r.RevokeContext(context.Background(), identity, reason, evidenceRef)
+}
+
+// RevokeContext invalidates an identity immediately and records why, honouring ctx.
+//
+// The ordering here is the most consequential in the package. The durable write happens
+// first and the in-memory revocation only after it succeeds, because the caller of this
+// function is the compromise response and its return value is reported to an investigator
+// as work that was done. A registry that revoked in memory and failed to persist would
+// return a successful Revocation naming an incident, and the durable record an
+// investigation would later consult would not contain it.
+//
+// The two directions of failure are not symmetric and the code treats them as such. An
+// in-memory revocation that outran its durable write leaves the registry believing a
+// workload is dead while every other process still accepts it - containment reported and not
+// achieved. The reverse - a durable revocation whose in-memory write failed - leaves the
+// registry stricter than the store, which a later retry repairs, because Revoke is
+// idempotent and returns the existing record.
+func (r *WorkloadRegistry) RevokeContext(
+	ctx context.Context,
+	identity string,
+	reason string,
+	evidenceRef string,
+) (Revocation, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -316,7 +389,20 @@ func (r *WorkloadRegistry) Revoke(
 		Reason:       reason,
 		EvidenceRef:  evidenceRef,
 	}
+	// The durable write precedes the in-memory revocation. See the method comment for why
+	// this direction and not the other.
+	if r.store != nil {
+		if err := r.store.InsertRevocation(ctx, rev); err != nil {
+			return Revocation{}, reject(contracts.CodeInternal, ErrIncompleteRecord,
+				"the durable store refused to record the revocation of %q, so it was not "+
+					"revoked and the identity is still live: %v", identity, err)
+		}
+	}
+
 	r.revocations[identity] = rev
+	// Removing the identity from the live map is a cache invalidation, not a deletion of
+	// record. The durable store keeps the row: it is what the revocation is evidence about,
+	// and removing it would leave a revocation citing a subject that exists nowhere.
 	delete(r.identities, identity)
 	return rev, nil
 }

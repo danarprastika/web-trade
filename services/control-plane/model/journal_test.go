@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -298,6 +299,57 @@ func TestAnUnregisteredModelCannotBeTransitioned(t *testing.T) {
 		CommandRecordEvaluation, "key-unknown")); err == nil {
 		t.Error("a transition was applied to an unregistered model")
 	}
+}
+
+// TestARefusedRequestWritesNoAuditRecord: a refusal is not a state change, so it must not
+// reach the chain.
+//
+// This test exists because mutation M27 - which makes a rejected request append a record
+// anyway - survived for a long time without any test failing. It survived because M27 did
+// not compile, and a mutation that does not compile is reported as detected while running
+// no test at all; see the harness's build-failure accounting. The claim was written down in
+// this file's own comments and in an evidence record, and nothing enforced it.
+//
+// The distinction matters beyond tidiness. The chain is the evidence an operator reads to
+// reconstruct what happened, and a chain that records every rejected call buries the
+// changes that did happen inside the noise of the ones that did not - which is the same
+// argument the chain makes for not accepting a partial batch.
+func TestARefusedRequestWritesNoAuditRecord(t *testing.T) {
+	j := newJournal(t)
+	id, _ := registeredModel(t, j)
+
+	before := len(j.Chain().AllRecords())
+
+	// A model that was never registered: refused for a reason unrelated to any model the
+	// journal knows, so nothing else in the chain should move either.
+	if _, err := j.Transact(step(t, j, modelIDN(t, 7), StateRegistered,
+		CommandRecordEvaluation, "key-refused-unknown")); err == nil {
+		t.Fatal("a transition was applied to an unregistered model")
+	}
+	// A model that exists, asked for an edge from a state it is not in: also a refusal.
+	// The request is built from the real edge and then misdescribes where the model is,
+	// which is the shape a confused or hostile caller would send.
+	misdescribed := step(t, j, id, StateRegistered, CommandRecordEvaluation, "key-refused-state")
+	misdescribed.From = StatePromoted
+	if _, err := j.Transact(misdescribed); err == nil {
+		t.Fatal("a transition was applied against a misdescribed current state")
+	}
+
+	if after := len(j.Chain().AllRecords()); after != before {
+		t.Fatalf("chain grew from %d to %d records across two refusals; a refusal is not a "+
+			"state change and must not be recorded as one. Records written: %s",
+			before, after, describeNewRecords(j.Chain().AllRecords()[before:]))
+	}
+}
+
+// describeNewRecords names the records a mutation managed to add, so a failure says which
+// unexpected write happened rather than only how many.
+func describeNewRecords(records []audit.Record) string {
+	parts := make([]string, 0, len(records))
+	for _, r := range records {
+		parts = append(parts, r.AuditID+"/"+r.Action+"/"+string(r.Result))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // TestRegistrationIsAudited: a model that exists in the registry but never in the audit

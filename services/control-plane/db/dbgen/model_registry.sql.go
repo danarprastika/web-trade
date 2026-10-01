@@ -406,6 +406,144 @@ func (q *Queries) ListActiveModels(ctx context.Context) ([]ModelRegistry, error)
 	return items, nil
 }
 
+const listAllModels = `-- name: ListAllModels :many
+SELECT model_id, version, owner, author, training_dataset_fingerprint, code_revision, feature_specification, evaluation_results, limitations, approval_record, deployment_scope, monitoring_policy, rollback_artifact, state, registered_at_utc, last_audit_id, updated_by, updated_at_utc FROM model_registry ORDER BY model_id
+`
+
+// Every registered model, in every lifecycle state, for startup rehydration.
+//
+// ListActiveModels is not a substitute. It is deliberately blind to the terminal states, which
+// is correct for a serving set and exactly wrong for a restore: a journal rebuilt only from
+// active models has no memory that a model was ever retired, so the model looks unregistered
+// and can be registered again from scratch. Terminal states are the rows that most have to
+// survive a restart.
+//
+// Unbounded, unlike the audit reads, because this is bounded by the number of models rather
+// than by a retention period, and because a restore that silently loaded a prefix of the
+// registry would be worse than one that took the whole table.
+func (q *Queries) ListAllModels(ctx context.Context) ([]ModelRegistry, error) {
+	rows, err := q.db.QueryContext(ctx, listAllModels)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ModelRegistry{}
+	for rows.Next() {
+		var i ModelRegistry
+		if err := rows.Scan(
+			&i.ModelID,
+			&i.Version,
+			&i.Owner,
+			&i.Author,
+			&i.TrainingDatasetFingerprint,
+			&i.CodeRevision,
+			&i.FeatureSpecification,
+			&i.EvaluationResults,
+			&i.Limitations,
+			&i.ApprovalRecord,
+			&i.DeploymentScope,
+			&i.MonitoringPolicy,
+			&i.RollbackArtifact,
+			&i.State,
+			&i.RegisteredAtUtc,
+			&i.LastAuditID,
+			&i.UpdatedBy,
+			&i.UpdatedAtUtc,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAllWorkloadIdentities = `-- name: ListAllWorkloadIdentities :many
+SELECT identity, model_id, model_version, scope, issued_at_utc, expires_at_utc FROM workload_identities ORDER BY identity
+`
+
+// Every workload identity ever issued, for startup rehydration.
+//
+// ListValidIdentitiesForModelVersion is not a substitute: it filters to currently valid ones,
+// which is right for a serving check and exactly wrong for a restore, because an expired or
+// revoked identity that is not loaded here becomes mintable again. The revocation check in the
+// registry is a lookup in a map that only exists if the revocations were loaded too, so a
+// partial load of either table silently removes a security control.
+func (q *Queries) ListAllWorkloadIdentities(ctx context.Context) ([]WorkloadIdentity, error) {
+	rows, err := q.db.QueryContext(ctx, listAllWorkloadIdentities)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []WorkloadIdentity{}
+	for rows.Next() {
+		var i WorkloadIdentity
+		if err := rows.Scan(
+			&i.Identity,
+			&i.ModelID,
+			&i.ModelVersion,
+			&i.Scope,
+			&i.IssuedAtUtc,
+			&i.ExpiresAtUtc,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAllWorkloadRevocations = `-- name: ListAllWorkloadRevocations :many
+SELECT identity, model_id, model_version, revoked_at_utc, reason, evidence_ref, revoked_by FROM workload_revocations ORDER BY revoked_at_utc, identity
+`
+
+// Every revocation, for startup rehydration.
+//
+// Unbounded for the same reason as the identity list: this table is the authority on which
+// identities must never be re-minted, and loading a prefix of it means the identities not
+// covered by that prefix have no recorded revocation.
+func (q *Queries) ListAllWorkloadRevocations(ctx context.Context) ([]WorkloadRevocation, error) {
+	rows, err := q.db.QueryContext(ctx, listAllWorkloadRevocations)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []WorkloadRevocation{}
+	for rows.Next() {
+		var i WorkloadRevocation
+		if err := rows.Scan(
+			&i.Identity,
+			&i.ModelID,
+			&i.ModelVersion,
+			&i.RevokedAtUtc,
+			&i.Reason,
+			&i.EvidenceRef,
+			&i.RevokedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listIdempotencyForModel = `-- name: ListIdempotencyForModel :many
 SELECT idempotency_scope, idempotency_key, request_fingerprint, model_id, from_state, to_state, audit_id, applied_at_utc FROM model_transition_idempotency
 WHERE model_id = $1

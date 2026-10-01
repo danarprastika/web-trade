@@ -13,6 +13,8 @@ require (
 	github.com/danarprastika/web-trade/contracts/go v0.0.0
 )
 
+require github.com/lib/pq v1.10.9 // indirect
+
 replace github.com/danarprastika/web-trade/contracts/go => ../../contracts/go
 
 // The OMS is a test-only dependency of the control plane, used to drive real order state

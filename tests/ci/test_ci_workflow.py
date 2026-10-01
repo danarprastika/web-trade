@@ -17,6 +17,8 @@ Run:
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -423,3 +425,47 @@ def test_every_python_worker_has_a_release_gate(workflow: dict) -> None:
             f"{worker} is not exercised by any gate in scripts/run_gates.py; it is absent "
             f"from the release sweep"
         )
+
+
+def test_every_run_block_is_valid_bash(workflow: dict) -> None:
+    """Every `run:` block must be syntactically valid bash.
+
+    A syntax error in a step is the most expensive cheap failure available in this repository:
+    it does not fail where it is written, it fails minutes into a later job on a runner, after
+    the build cache is warm and the developer has moved on. It is also invisible to every other
+    check in this file, all of which parse the YAML rather than the shell.
+
+    This mirrors what scripts/check_workflow_bash.py does inside the toolchain job. It is
+    duplicated here deliberately, for a specific reason: a step that runs inside CI cannot catch
+    a malformed workflow, because a workflow GitHub cannot parse does not run its own jobs. The
+    local suite is the only place this is caught before a push.
+
+    The check is skipped, never failed, when bash is absent, because a missing interpreter is
+    not a malformed workflow and must not be reported as one.
+    """
+    bash = shutil.which("bash")
+    if bash is None:
+        pytest.skip("no bash on PATH; the run blocks were not syntax-checked")
+
+    checked = 0
+    for job_name, job in (workflow.get("jobs") or {}).items():
+        for step in job.get("steps") or []:
+            script = step.get("run")
+            if not isinstance(script, str) or not script.strip():
+                continue
+            label = step.get("name") or step.get("uses") or "(unnamed step)"
+            checked += 1
+
+            # Binary stdin, never a text pipe: on Windows a text-mode pipe translates "\n" to
+            # "\r\n", and bash reads the carriage return as part of the command. That produced
+            # phantom failures for a workflow that was entirely valid.
+            body = script if script.lstrip().startswith("#!") else "#!/usr/bin/env bash\n" + script
+            result = subprocess.run(
+                [bash, "-n"], input=body.encode("utf-8"), capture_output=True
+            )
+            assert result.returncode == 0, (
+                f"{job_name}: {label} is not valid bash: "
+                f"{result.stderr.decode('utf-8', 'replace').strip()}"
+            )
+
+    assert checked > 0, "no run: blocks were found; the check is not examining anything"
