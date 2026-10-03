@@ -10,9 +10,9 @@ Re-running the script overwrites this file; it is a derived artifact, not an inp
 | Gate | G0 |
 | Specification package | `AI_Trading_Company_FINAL_PRODUCTION_BLUEPRINT` |
 | Manifest status | FINAL |
-| Commit | `01e52e17489424c09ccbb5ec63a506a8b67117b5` |
+| Commit | `a74595001b1c7c7d6516a0d5ae5a7593e2799c1e` |
 | docs/ working tree | clean |
-| Executed at (UTC) | 2026-10-03T05:20:14Z |
+| Executed at (UTC) | 2026-10-03T07:30:46Z |
 | Automated executor | `team-lead` via `scripts/verify_spec_gate.py` |
 | Human reviewer | **NOT YET ASSIGNED** |
 
