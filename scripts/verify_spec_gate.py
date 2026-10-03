@@ -600,8 +600,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[{report.verdict:28}] VERDICT")
 
     pkg.out_dir.mkdir(parents=True, exist_ok=True)
+    # newline="\n" is required, not cosmetic: without it Python translates "\n" to CRLF on
+    # Windows, so the same gate would write a different report per platform. That is the
+    # failure .gitattributes documents for the init script, and it would leave the tree
+    # permanently dirty on a Windows checkout while every gate still reported success.
     (pkg.out_dir / "G0-gate-report.md").write_text(
-        render_markdown(report, manifest, commit, dirty, ran_at), encoding="utf-8"
+        render_markdown(report, manifest, commit, dirty, ran_at),
+        encoding="utf-8",
+        newline="\n",
     )
     (pkg.out_dir / "G0-gate-report.json").write_text(
         json.dumps(
@@ -628,6 +634,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         + "\n",
         encoding="utf-8",
+        newline="\n",
     )
 
     if report.failures:
