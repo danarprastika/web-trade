@@ -244,8 +244,41 @@ def discard_backup() -> None:
     BACKUP.discard()
 
 
+# `go build <pkg>` writes an executable named after the package into the current directory
+# whenever the package is a main package. `./cmd/migrate/` is one, so on Linux that name is
+# `migrate` - which is also the sibling directory `migrate/`. Go refuses with
+# `go: build output "migrate" already exists and is a directory`, and because the baseline
+# build is what decides whether any result may be interpreted, the gate stops there.
+#
+# On Windows the same build produces `migrate.exe`, which does not collide with a directory
+# named `migrate`. That is why this passed on every developer machine and failed only on the
+# CI runner: the gate was correct on Windows and broken on Linux, and nothing about the
+# mutation testing itself was involved.
+#
+# Only a main package writes an executable, so only a main package needs redirecting; `go build
+# -o` rejects a library outright with "no main packages to build". The package name is asked of
+# `go list` once per package, which works offline and does not depend on the build cache.
+BUILD_DIR = Path(tempfile.gettempdir()) / "kilo" / "mutation-gate-build"
+_IS_MAIN: dict[str, bool] = {}
+
+
+def _is_main_package(package: str) -> bool:
+    if package not in _IS_MAIN:
+        listed = go("list", "-f", "{{.Name}}", package)
+        _IS_MAIN[package] = listed.returncode == 0 and listed.stdout.strip() == "main"
+    return _IS_MAIN[package]
+
+
 def build(package: str) -> subprocess.CompletedProcess[str]:
-    return go("build", package)
+    """Compile a package without writing anything into the source tree.
+
+    Redirecting a main package's executable to a directory outside the repository is what
+    keeps this gate portable; leaving a library alone is what keeps it compiling at all.
+    """
+    if not _is_main_package(package):
+        return go("build", package)
+    BUILD_DIR.mkdir(parents=True, exist_ok=True)
+    return go("build", "-o", str(BUILD_DIR), package)
 
 
 def run_test(package: str, name: str) -> subprocess.CompletedProcess[str]:

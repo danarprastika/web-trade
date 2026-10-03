@@ -113,55 +113,61 @@ def test_project_brain_gate_runs_on_every_merge(workflow: dict) -> None:
     )
 
 
-def test_the_toolchain_job_installs_what_its_own_tests_need(workflow: dict) -> None:
-    """The toolchain job must install the CI suite's dependencies before running it.
+def test_every_job_that_runs_the_ci_suite_first_installs_its_dependencies(
+    workflow: dict,
+) -> None:
+    """Any job that runs tests/ci must install that suite's pinned dependencies first.
 
-    This is not hypothetical. The job went straight from actions/setup-python to
-    `python -m pytest tests/ci` with no install step, so on the runner pytest was absent
-    and the step exited 1 in under a second. Because the workflow is fail-fast, that one
-    missing line left all eleven other jobs skipped, and the build reported failure for a
-    reason that had nothing to do with the code.
+    This is not hypothetical, and it was not one job. The toolchain job went straight from
+    actions/setup-python to `python -m pytest tests/ci` with no install step, so on the runner
+    pytest was absent and the step exited 1 in under a second; because the workflow is
+    fail-fast, that one missing line left all eleven other jobs skipped. The spec-gate and
+    project-brain jobs carried the identical defect, hidden behind the same fail-fast, and each
+    died in about five seconds for the same reason. None of it involved the code under test.
 
-    Order is part of the assertion: an install placed after the pytest call is the same
-    defect with extra lines. The requirements file is asserted to exist too, so deleting it
-    fails here rather than as an opaque pip error on the runner.
+    So this is asserted for EVERY such job rather than for the one that happened to be
+    diagnosed. A new gate job added without the install would otherwise fail for want of its own
+    dependency, and the error would name a missing module rather than the missing line.
+
+    Order is part of the assertion: an install placed after the pytest call is the same defect
+    with extra lines.
     """
     jobs = workflow.get("jobs") or {}
-    assert "toolchain" in jobs, "the toolchain job is missing, so this assertion is vacuous"
-    steps = yaml.safe_load(yaml.safe_dump(jobs["toolchain"]))["steps"]
+    assert jobs, "the workflow declares no jobs, so this assertion is vacuous"
 
-    runs = [
-        s.get("run", "") for s in steps if isinstance(s, dict) and s.get("run")
-    ]
-    assert runs, "the toolchain job has no run steps, so the assertion below is vacuous"
+    offenders: list[str] = []
+    checked = 0
+    for name, job in jobs.items():
+        steps = (job or {}).get("steps") or []
+        runs = [
+            s.get("run", "") for s in steps if isinstance(s, dict) and s.get("run")
+        ]
+        first_use = next(
+            (i for i, run in enumerate(runs) if "pytest" in run and "tests/ci" in run),
+            None,
+        )
+        if first_use is None:
+            continue
+        checked += 1
+        installed = any(
+            "pip install" in run and "tests/ci/requirements.txt" in run
+            for run in runs[:first_use]
+        )
+        if not installed:
+            offenders.append(
+                f"{name} (runs tests/ci at step {first_use} with no earlier "
+                f"pip install of tests/ci/requirements.txt)"
+            )
 
-    install_at = next(
-        (
-            i
-            for i, run in enumerate(runs)
-            if "pip install" in run and "tests/ci/requirements.txt" in run
-        ),
-        None,
+    assert checked, (
+        "no job runs tests/ci any more, so the gates' own negative cases are unverified; a gate "
+        "that has stopped rejecting bad input is trusted and therefore worse than no gate"
     )
-    assert install_at is not None, (
-        "the toolchain job never installs tests/ci/requirements.txt. actions/setup-python "
-        "gives a clean interpreter with no pytest, so `python -m pytest tests/ci` fails "
-        "with 'No module named pytest' and, because the workflow is fail-fast, every other "
-        "job is skipped. The gate must not be able to fail for want of its own dependency."
-    )
-
-    pytest_at = next(
-        (i for i, run in enumerate(runs) if "pytest" in run and "tests/ci" in run),
-        None,
-    )
-    assert pytest_at is not None, (
-        "the toolchain job no longer runs the CI suite's own tests, so the gates' negative "
-        "cases are unverified; a gate that has stopped rejecting bad input is trusted and "
-        "therefore worse than no gate"
-    )
-    assert install_at < pytest_at, (
-        f"the CI suite is tested at step {pytest_at} but its dependencies are installed at "
-        f"step {install_at}; the install must come first"
+    assert not offenders, (
+        "these jobs run the CI suite without installing its dependencies. actions/setup-python "
+        "gives a clean interpreter with no pytest, so `python -m pytest tests/ci/...` fails with "
+        "'No module named pytest' before any test runs:\n  "
+        + "\n  ".join(offenders)
     )
 
 

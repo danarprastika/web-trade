@@ -116,6 +116,13 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      - name: Install the CI suite's pinned test dependencies
+        # Same defect as the toolchain job, and the same fix. actions/setup-python provides a
+        # clean interpreter containing no pytest, so the step below cannot start and exits
+        # non-zero before a single test runs. Installed from the one pinned file so every job
+        # runs the gates' own tests against the same dependency set.
+        run: python -m pip install --disable-pip-version-check -r tests/ci/requirements.txt
+
       - name: Assert the G0 gate's own tests
         # Same reasoning as the toolchain job: a gate that has quietly stopped rejecting
         # tampering must fail here rather than at the next real integrity incident.
@@ -155,6 +162,12 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install the CI suite's pinned test dependencies
+        # Same defect as the toolchain job, and the same fix. Without this the job dies in
+        # about five seconds with "No module named pytest" and the Project Brain gate below
+        # never runs, which is the opposite of what a ledger-integrity job is for.
+        run: python -m pip install --disable-pip-version-check -r tests/ci/requirements.txt
 
       - name: Assert the Project Brain gate's own tests
         # The ledger is what records what this project has verified. If its gate can
