@@ -79,3 +79,12 @@ Thumbs.db
 # would be an attempt to admit exactly what the gate exists to refuse. Kept on disk so
 # scripts/probe_driver_pinning.py can re-verify EV-060 rather than trusting the record.
 _driver_probe/
+
+# ---- Go workspace module list (CI working-directory artifact, not an input) ----
+# Every Go job resolves the workspace with `go work edit -json` into modules.txt in the
+# checkout root and then iterates it, and the vulnerability scan refuses to report a clean
+# result unless that file exists and is non-empty. Those two properties together mean a
+# COMMITTED modules.txt is worse than no file at all: the guard tests for presence and size,
+# never for freshness, so a stale tracked copy would let a job whose resolve step failed
+# quietly scan a module list from whenever it was last written. Each job must resolve its own.
+modules.txt

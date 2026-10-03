@@ -190,7 +190,7 @@
         "EV-015",
         "EV-017"
       ],
-      "blocker": "No CI run has occurred: the workflow is not pushed to a remote, and the Docker-dependent jobs cannot run while the daemon is unavailable. The container-image build, gitleaks, CodeQL, govulncheck, cosign attestation, integration, and SBOM/provenance acceptance criteria are verified as configuration only, never as observed output. EV-014 records this as VERIFIED_WITH_EXCEPTION. The project-brain job added this session is unexecuted for the same reason.",
+      "blocker": "Corrected 2026-10-03. The previous text recorded two reasons that no longer held: that the workflow is not pushed to a remote (it has been on origin/main since 57160f1) and that the Docker-dependent jobs cannot run while the daemon is unavailable (it answers). What is now observed output rather than configuration: toolchain pins, the G0 specification gate, project brain integrity, contract validation, gofmt/vet/build/test for all six workspace modules, the web typecheck, lint and build, the vulnerability scan and its proof, the secret scan over full history and its proof, and the whole integration job against a real PostgreSQL 17 including 98 live-database tests with zero skips (EV-092).\n\nWhat remains configuration-only, never as observed output, and why: CodeQL extraction requires the CodeQL tracer; the container image build, SBOM emission and cosign provenance attestation require a registry and an OIDC identity; and the race detector on the integration suite requires the C toolchain, which this host does not have (EV-092). GitHub Actions results are not observable from this host at all, because gh is unauthenticated for this repository - so no claim here rests on a run's reported outcome. EV-014 records this item as VERIFIED_WITH_EXCEPTION.",
       "partial_results": "toolchain/versions.env + scripts/verify_toolchain.py (14 checks, proven by 23 negative tests), .github/workflows/ci.yml (11 jobs, 10 actions pinned to verified commit SHAs), .github/dependabot.yml (11 ecosystems), apps/web/Dockerfile, next.config.ts standalone output, scripts/verify_spec_gate.py (G0 integrity, 7 mechanical criteria, 22 tests), scripts/verify_project_brain.py. Local sweep: 106 Python tests pass; 6/6 Go modules pass vet, build, test -race and go mod verify.",
       "acceptance_criteria": [
         "Every-merge job runs formatting, lint, unit tests, contract validation, SAST, dependency scan",
@@ -1389,6 +1389,77 @@
       ],
       "evidence_ref": [
         "EV-090"
+      ]
+    },
+    {
+      "id": "WI-190",
+      "phase": 2,
+      "title": "An independent review of the CI batch found a dead assertion and an unguarded empty loop; acting on it exposed that the batch had itself turned the secret-scan job red",
+      "status": "COMPLETED",
+      "priority": "high",
+      "acceptance_criteria": [
+        "The Go SAST build step refuses an empty module list, and the assertion covers it",
+        "The Go SAST test resolves the matrix build mode so no assertion in it is unreachable",
+        "The committed secret scan over full history exits 0, and the proof still fails a planted token",
+        "The token exception in .gitleaks.toml cannot match a realistic random token, and the proof does not plant a token the exception excuses",
+        "Every new or rewritten assertion has a negative control that was executed"
+      ],
+      "source": "An independent release-verifier pass over fa2156f and 7733977, run read-only, reporting three findings and one disclosure.",
+      "reproduction": "Three findings. (1) The Go SAST build step fed its module list through `done < <(go work edit -json | jq ...)`; under `set -euo pipefail` a failure inside a process substitution does not propagate, and an empty list makes the loop body run zero times, so a resolution returning nothing left the leg extracting nothing and exiting 0 - and unlike three sibling steps it had no empty-list check. (2) The test that guards that step gated both its assertions behind `if build_mode == \"manual\":`, while the init step passes the literal string `${{ matrix.build-mode }}`, so the comparison was never true and lines 413-428 never executed; deleting the build step from an in-memory copy of the workflow still passed. (3) EV-086 therefore claimed the test 'observes both properties of the Go leg' when it observed neither. Separately, .gitleaks.toml's comment asserted that a UUID does not match the exception, which running the expression showed to be false.",
+      "notes": "The fourth defect was found while fixing the first and is the one that mattered most. The secret-scan job was RED on the pushed commit: scripts/prove_secret_scan_gate.py was added by fa2156f carrying a whole PAT-shaped literal at line 67, and the job that exists to prove the secret scan works was failing on this repository's own source. The tests/ci suite never caught it because it does not run the scanner, and the previous full-history scan reported clean because it was run before that file existed.\n\nThe fix has a constraint that is easy to get wrong. The scan covers history, so editing the file cannot clear the two commits that carry the literal - they are on the remote and are not being rewritten. The value therefore has to be excused, and the obvious ways to scope that excuse were tried against the scanner rather than assumed. Scoping by path: the allowlist block still suppressed the value in a scratch repository at a different path. Scoping by commit: naming the finding's exact commit SHA left it reported. A fingerprint entry naming the exact finding was accepted by the parser and suppressed nothing. A stopword could not reach it, because stopwords are matched against the secret the rule matched - here the token alone - and not against its line. So this scanner treats an allowlist block's checks as alternatives and honours none of the scoping keys for this case, and the narrowest mechanism observed to work is a value pattern. That pattern is the shape of the one synthetic value rather than the value: ten digits, then ten lowercase, then ten uppercase, then six digits, in that order. No random 36-character token has that ordering, and the config therefore contains no literal token and is not itself a finding.\n\nBecause a value-shaped exception applies everywhere, the proof can no longer plant that shape or it would pass without the scan looking at all. It now plants a different synthetic token, and both facts are enforced rather than assumed: the proof refuses to run if its token is malformed or matches the excused shape, and a test in tests/ci asserts that the exception matches no realistic token and that the proof's value does not match the exception.\n\nThat test was itself wrong on first writing, and its negative control is what proved it. It compiled the config's patterns and then interpolated the compiled objects into a combined pattern, producing the literal text re.compile('ghp_...'), which matches nothing - so the assertion passed for a config that excuses every token in the world. The control widened the exception to `ghp_[A-Za-z0-9]{36}` and the test still passed, which is the only reason the defect is not still in the file.",
+      "dependencies": [
+        "WI-185",
+        "WI-186"
+      ],
+      "evidence_ref": [
+        "EV-091"
+      ]
+    },
+    {
+      "id": "WI-191",
+      "phase": 1,
+      "title": "The integration job's acceptance criterion is observed output rather than configuration, and WI-107's recorded blocker no longer describes the repository",
+      "status": "COMPLETED",
+      "priority": "medium",
+      "acceptance_criteria": [
+        "The integration job's steps are executed locally against a real PostgreSQL 17",
+        "Every live-database test target is shown to run, with zero skips",
+        "WI-107's blocker states what is still configuration-only and no longer claims the workflow is unpushed or that Docker is unavailable"
+      ],
+      "source": "Reading WI-107's blocker while closing out this batch. It recorded that the workflow is not pushed to a remote and that the Docker-dependent jobs cannot run while the daemon is unavailable; both were false.",
+      "reproduction": "WI-107 has been IN_PROGRESS since it was created, with a blocker naming seven criteria verified as configuration only: the container-image build, gitleaks, CodeQL, govulncheck, cosign attestation, integration, and SBOM/provenance. The workflow has been pushed to origin/main since 57160f1, and the Docker daemon is running - it answered 29.8.0 - so the blocker's two stated reasons for not running those jobs no longer held. gitleaks, govulncheck and the integration suite have since been executed locally; CodeQL, the image build, cosign attestation and SBOM emission still have not, for reasons that are now recorded rather than assumed.",
+      "notes": "The integration job was reproduced with the same image and the same credentials the workflow's service block declares, postgres:17.11-alpine with webtrade/webtrade and database webtrade_test on port 5432, so the run is the job rather than an approximation of it. Its six steps all executed: go.work module resolution, the migration rehearsal, applying the four migrations, `migrate -direction status` against the live database, the integration tests for all six workspace modules, and the no-skip check.\n\nThe no-skip step is the one that makes the rest meaningful. A live-database test that skips verifies nothing while the job stays green, so the check re-runs each live target verbosely and fails on any SKIP line: 17 passed with no skips in cmd/migrate, 52 in migrate, 29 in the integration package.\n\nOne honest difference from CI: the CI job runs the integration tests with -race, and the race detector was NOT exercised locally. This host is Windows without the C toolchain the race detector requires, so the suite ran without it. The race detector is therefore still configuration-only as far as this host is concerned, and that is stated here rather than implied by the passing result.",
+      "dependencies": [
+        "WI-107"
+      ],
+      "dependency_exemptions": {
+        "WI-107": "Correct, and recorded here because the distinction matters rather than because the dependency is spurious. WI-107 stays IN_PROGRESS for a reason this item does not touch: its remaining criteria are unmet conditions about OBSERVED OUTPUT on a GitHub runner - the container-image build, CodeQL, cosign attestation, SBOM and provenance emission, and a run of gitleaks and govulncheck in the runner environment - which says nothing about whether the tree's gates are complete. WI-191 is that tree's local half and it is finished: the integration job's six steps were executed against postgres:17.11-alpine with the workflow's own credentials, every live-database target ran with zero skips, and WI-107's blocker was corrected because its two stated reasons had become false.\n\nCompleting WI-191 makes no claim that the integration job has ever run on a runner. That gap stays open, it stays recorded on WI-107, and closing it needs a push to a runner rather than anything this repository can execute. The dependency is genuine, which is why this is an exemption carrying a reason and not a rewired edge: WI-191's evidence is only meaningful against the workflow exactly as WI-107 defines it, and the reproduction would not have been the job if it had used different image, credentials or database name. One limit is recorded in the item's notes rather than resolved here - the local run did not exercise the race detector, because this host is Windows without the C toolchain it requires, so -race remains configuration-only and is not folded into the completed claim."
+      },
+      "evidence_ref": [
+        "EV-092"
+      ]
+    },
+    {
+      "id": "WI-192",
+      "phase": 1,
+      "title": "The Python workers' typecheck step could never pass: mypy was invoked from a directory where the mypy_path its own configuration declares does not exist",
+      "status": "COMPLETED",
+      "priority": "high",
+      "acceptance_criteria": [
+        "Every mypy invocation in the workflow runs from a directory in which the mypy_path of the configuration it will read resolves to a real directory",
+        "The lint step executes to completion on this host, with both workers reporting success",
+        "The original wiring is observed failing under the same shell, so the change is shown to be load-bearing rather than cosmetic",
+        "The check reads each worker's declared configuration rather than pattern-matching the command, and accepts a worker that declares no mypy_path",
+        "The comment in workers/backtest/pyproject.toml no longer claims the two tools resolve the package from the same place"
+      ],
+      "source": "Running the CI battery locally against this tree for the first time, rather than reasoning about the workflow. The step is 'lint python workers', and nothing else in the repository executes it.",
+      "reproduction": "From the repository root, `python -m mypy workers/backtest/src` exits 1 with four import-not-found errors in harness.py and artifacts.py, naming webtrade_research.dataset, webtrade_research.canonical and webtrade_research.content_address. The same command from workers/backtest exits 0. workers/backtest/pyproject.toml declares `mypy_path = [\"src\", \"../research/src\"]`, and from the root those entries name `<root>/src` and `<root>/../research/src`, neither of which exists. Installing webtrade-research and webtrade-backtest into site-packages does not change the root-relative result, so the failure is not a missing install.",
+      "notes": "The trap is that the two configurations look identical and mean different places. pytest resolves `pythonpath` relative to rootdir, which is the directory holding the pyproject.toml, so `python -m pytest workers/backtest/tests -q` from the repository root has always worked. mypy resolves `mypy_path` relative to the current working directory. The comment above mypy_path said the entry 'mirrors the pytest pythonpath above so the two tools resolve the package from the same place', and that sentence was the defect: it was the justification for a configuration that does not work from where the workflow called it. It is corrected in place, where a reader would consult it.\n\nInstalling the package was the hypothesis that had to be eliminated rather than assumed. If site-packages held a typed webtrade_research, mypy would have resolved the import without help from mypy_path and the step would have passed. It does not: the built wheel carries no py.typed marker, so there is no typed distribution to fall back on, and the root-relative invocation still reports the same four errors after installation.\n\nThe new check reads the configuration instead of matching the shape of the command. It finds every mypy invocation in the workflow, establishes the working directory from either a `cd` in the same command or the step's `working-directory:`, locates the pyproject.toml above the target that declares [tool.mypy], and verifies each declared path resolves from that working directory. A third worker is therefore covered by the rule rather than by a new assertion, and a worker that declares no mypy_path is correctly accepted - workers/research declares none, because it imports nothing from the other worker, so a root-relative invocation is right for it. Demanding a `cd` from every worker would have rejected that valid configuration.\n\nOne control was written, run, and discarded because its premise was false: `(cd workers/research && python -m mypy ../backtest/src)` reads like a mistake and is not one. mypy_path resolves against the working directory, and from workers/research both entries exist, so the invocation succeeds. Asserting it fails would have encoded a misunderstanding of the tool in order to make the rule look thorough. The control that replaced it - descending one level too far, into workers/backtest/src, where `src` then means `workers/backtest/src/src` - is a real failure a rule that merely checked for the presence of a `cd` would wave through.",
+      "dependencies": [
+        "WI-182"
+      ],
+      "evidence_ref": [
+        "EV-093"
       ]
     }
   ]

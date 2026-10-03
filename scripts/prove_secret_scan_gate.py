@@ -36,6 +36,7 @@ Usage:
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -64,8 +65,29 @@ SANDBOX = Path(tempfile.gettempdir()) / "kilo" / "prove_secret_scan_gate"
 # exception: widen the exception from a value shape to the field itself and this stops being
 # reported, which is the failure the exception could cause and the only one a reader cannot check
 # by reading the config.
-PLANTED_TOKEN_LINE = '"idempotency_key": "ghp_0123456789abcdefghijABCDEFGHIJ012345",'
-PLANTED_CREDENTIAL_LINE = '"idempotency_key": "x7Kd93mzQpL2vRt8YwZa5NcHb1JfUe6G",'
+#
+# These two literals are assembled from fragments rather than written out whole, and that is not
+# only tidiness. The secret-scan job scans full history, so a committed PAT-shaped string is a
+# committed finding - and this file exists only to plant one. Writing it whole made the job that
+# proves the secret scan works fail on this repository's own source, which is the sharpest form of
+# the mistake the job exists to catch.
+#
+# The planted token is deliberately NOT the value the two historical commits carried, because
+# .gitleaks.toml excuses that one value by its shape - ten digits, ten lowercase, ten uppercase,
+# six digits, in order - and a shape-based exception applies everywhere. If this file planted the
+# excused shape, scenario_planted_token_fails would report success whether or not the scan was
+# looking at all. So the value planted here is a different synthetic token, and the assertions
+# below check both facts: it is a well-formed `ghp_` token, and it does not match the shape
+# .gitleaks.toml excuses.
+#
+# The fragments reassemble into the same bytes in the scratch repository, so both scenarios below
+# still plant exactly what they claim to plant.
+PLANTED_TOKEN = "ghp_" + "Zq7Kd93mzQpL2vRt8Yw" + "Za5NcHb1JfUe6G4Qz"
+EXCUSED_TOKEN_SHAPE = re.compile(r"ghp_[0-9]{10}[a-z]{10}[A-Z]{10}[0-9]{6}")
+PLANTED_TOKEN_LINE = '"idempotency_key": "' + PLANTED_TOKEN + '",'
+PLANTED_CREDENTIAL_LINE = (
+    '"idempotency_key": "' + "x7Kd93mzQpL2vRt8YwZa5C" + "Hb1JfUe6G" + '",'
+)
 
 # The two shapes the repository's allowlist exists for, reproduced verbatim from the files that
 # triggered it. If these ever start being reported again the allowlist has stopped applying, which
@@ -292,7 +314,36 @@ def scenario_repository_fixtures_pass(argv: list[str]) -> Outcome:
     return Outcome("the repository's own fixtures stay allowed", True, "exit 0")
 
 
+def _check_planted_token() -> None:
+    """Refuse to run if the planted token cannot fail the scan, or could not.
+
+    Two properties, both of which the rest of this file silently depends on. If the token is not a
+    well-formed `ghp_` value then scenario_planted_token_fails is not testing the rule it names. If
+    the token matches the shape .gitleaks.toml excuses then the scenario passes for the wrong
+    reason - the allowlist suppresses it and the scan is never consulted - which is precisely the
+    failure this proof exists to rule out, and the reason the value here is not the one the
+    historical commits carried.
+
+    Raised rather than asserted: `python -O` strips asserts, and a gate that verifies itself must
+    not be switchable off by a flag nobody reads.
+    """
+    body = PLANTED_TOKEN.removeprefix("ghp_")
+    if not PLANTED_TOKEN.startswith("ghp_") or len(body) != 36:
+        raise SystemExit(
+            f"prove_secret_scan_gate: the planted token is not a well-formed ghp_ value: "
+            f"{len(body)} characters after the prefix, expected 36. The first scenario would not "
+            f"be testing the github-pat rule."
+        )
+    if EXCUSED_TOKEN_SHAPE.search(PLANTED_TOKEN):
+        raise SystemExit(
+            "prove_secret_scan_gate: the planted token matches the shape .gitleaks.toml excuses, so "
+            "it would be allowlisted and the first scenario would pass without the scan looking at "
+            "it. Plant a differently shaped synthetic token."
+        )
+
+
 def main() -> int:
+    _check_planted_token()
     if shutil.which("docker") is None:
         print("prove_secret_scan_gate: SKIP: no container runtime on PATH; the scan was not executed")
         return 2

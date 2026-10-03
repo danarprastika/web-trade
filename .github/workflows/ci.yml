@@ -542,10 +542,31 @@ jobs:
       - name: lint python workers
         # ruff and mypy strict are configured per worker rather than once at the root, because
         # the workers have separate dependency sets and separate boundaries.
+        #
+        # mypy is invoked from inside each worker directory, and that is load-bearing rather than
+        # stylistic. Both workers' pyproject.toml files declare the same relative paths for the
+        # same purpose - `pythonpath = ["src", "../research/src"]` for pytest and
+        # `mypy_path = ["src", "../research/src"]` for mypy - each with a comment saying the entry
+        # exists so both tools resolve webtrade_research from the same place. They do not resolve
+        # from the same place. pytest resolves `pythonpath` relative to rootdir, the directory
+        # holding the pyproject.toml, so it works from anywhere. mypy resolves `mypy_path` relative
+        # to the CURRENT WORKING DIRECTORY, so from the checkout root those entries name
+        # <root>/src and <root>/../research/src, and neither exists.
+        #
+        # The consequence is not a warning mypy would survive. It cannot fall back to the installed
+        # wheel either: webtrade-research ships no py.typed marker, so under `strict` the import is
+        # reported as missing rather than typed as Any. Measured, not inferred -
+        # `python -m mypy workers/backtest/src` from the repository root exits 1 with four
+        # import-not-found errors, and exits 0 from workers/backtest. Installing the package into
+        # site-packages does not change either number.
+        #
+        # A subshell per worker, so neither cd leaks into the following line and a cd that fails
+        # fails the step instead of silently type-checking the wrong tree.
         run: |
+          set -euo pipefail
           python -m ruff check workers/research workers/backtest
-          python -m mypy workers/research/src
-          python -m mypy workers/backtest/src
+          (cd workers/research && python -m mypy src)
+          (cd workers/backtest && python -m mypy src)
   # ---------------------------------------------------------------------------
   # SAST.
   # ---------------------------------------------------------------------------
@@ -609,6 +630,21 @@ jobs:
         # to go.work is extracted with no workflow edit - is what makes the Go leg work at all.
         run: |
           set -euo pipefail
+          # Resolve first, into a file, and refuse an empty list - the same block the go and
+          # dependency-scan jobs run. This originally used `done < <(go work edit -json | jq ...)`
+          # directly, which is wrong twice over: under `set -euo pipefail` a failure inside a
+          # process substitution does NOT propagate to this step, and an empty list makes the loop
+          # body run zero times. Both outcomes are exit 0 with nothing built, so a resolution that
+          # silently returned nothing would have left the Go leg extracting nothing and reporting
+          # success - the exact shape of the failure this step exists to prevent.
+          go work edit -json | jq -r '.Use[].DiskPath' > modules.txt
+          count="$(wc -l < modules.txt)"
+          if [ "$count" -eq 0 ]; then
+            echo "::error::no modules resolved from go.work; refusing to run the Go SAST leg as an empty gate"
+            exit 1
+          fi
+          echo "resolved $count modules:"
+          cat modules.txt
           while read -r m; do
             [ -n "$m" ] || continue
             if [ ! -f "$m/go.mod" ]; then
@@ -620,7 +656,7 @@ jobs:
               echo "::error::failed to build workspace module $m; CodeQL would extract nothing"
               exit 1
             fi
-          done < <(go work edit -json | jq -r '.Use[].DiskPath')
+          done < modules.txt
 
       # CodeQL needs the build to have happened to trace data flow. For compiled
       # languages the build is performed by the action rather than by the project, so

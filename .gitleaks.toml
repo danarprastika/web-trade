@@ -28,12 +28,30 @@ useDefault = true
 description = "Fixture idempotency keys, which the generic-api-key rule reads as credentials because the field name contains 'key'. An idempotency key is a client-chosen request deduplication token, not a secret: it grants nothing and authenticates nothing."
 regexTarget = "match"
 regexes = [
-  # Matches `idempotency_key` assignments whose value is a human-readable hyphenated token, such
+  # Matches `idempotency_key` assignments whose value is a lowercase hyphenated token, such
   # as "idempotency_key": "order-place-trader-01-20260928-001" in contracts/fixtures and
-  # WHERE idempotency_key = 'idempotency-key-0001' in db/tests. The value part is required to
-  # contain at least one hyphen and to start with an alphanumeric, so a 64-character hex digest,
-  # a base64 blob, a UUID, or a bare alphanumeric token does not match. A real credential
-#   assigned to this field is still reported.
+  # WHERE idempotency_key = 'idempotency-key-0001' in db/tests.
+  #
+  # What this does NOT excuse, established by running the expression against each shape rather
+  # than by reading it:
+  #   * a 64-character hex digest      - no hyphen, so not matched
+  #   * a base64 blob                  - no hyphen, so not matched
+  #   * a bare alphanumeric token      - no hyphen, so not matched
+  #   * any value containing uppercase - the character class is [a-z0-9] only, and the inline
+  #                                     (?i:) applies to the field name rather than the value
+  #
+  # The lowercase restriction is what stops this exception from excusing a credential. The
+  # previous expression was case-insensitive over the whole pattern, so `AKIAIOSFODNN7EXEMPLQ-wJalrXUtnFEMI`
+  # - a hyphenated value containing uppercase - was excused by it. Narrowing was safe to do
+  # because every value that has to stay excused was read out of the reachable history first:
+  # all seven hyphenated ones are lowercase, and the only uppercase values in history are the
+  # proof's own planted credentials, which have no hyphen and are therefore still reported.
+  #
+  # Two shapes ARE still excused, and are named here rather than left for a reader to assume:
+  #   * UUID-shaped values, e.g. 3f2504e0-4f89-41d3-9a0c-0305e82c3301 - lowercase hex groups
+  #     joined by hyphens, which the value pattern matches. A UUID is an identifier, not a
+  #     credential.
+  #   * any other lowercase hyphenated value, however high its entropy.
   #
   # Note what this exception does NOT do, because the scope is easy to over-read: gitleaks
   # applies an allowlist regex to the span the rule itself matched, not to the surrounding line.
@@ -42,11 +60,18 @@ regexes = [
   # a span containing the field name and is therefore never excused by this line. Widening this
   # regex to "any value in this field" would silence generic-api-key for real credentials there,
   # which is precisely what scripts/prove_secret_scan_gate.py fails on.
-  '''(?i)idempotency_key"?\s*[:=]\s*["']?[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+["']?''',
+  '''(?i:idempotency_key)"?\s*[:=]\s*["']?[a-z0-9]+(?:-[a-z0-9]+)+["']?''',
 ]
 
 [[allowlists]]
 description = "One phrase of English prose in docs/18 that the generic-api-key rule read as a credential pair: the keyword 'access' in 'access is least-privilege' followed by the next token, 'jurisdiction/venue'."
 stopwords = [
   "jurisdiction/venue",
+]
+
+[[allowlists]]
+description = "One finding, in commits fa2156f and 21330ed. scripts/prove_secret_scan_gate.py as first committed carried a synthetic GitHub token written out whole, at line 67, because that file exists to plant a value in a scratch repository - so the job that proves the secret scan works was failing on this repository's own source. The file now assembles its planted value from fragments, so no new commit contains it, but the scan covers history and a commit cannot be un-written.\n\nThe pattern is the shape of that one value, not the value: ten digits, then ten lowercase letters, then ten uppercase letters, then six digits, in that order. A real GitHub token is 36 random base62 characters, so the chance of one matching this ordering is negligible - the pattern cannot be used to hide a credential, and it contains no literal token, so this file is not itself a finding. This also means the value is excused wherever it appears, which is why prove_secret_scan_gate.py plants a differently shaped synthetic token: a proof that planted the excused shape would pass whether or not the scan was looking.\n\nScoping this finding by commit, by path or by fingerprint does not work in this scanner, and each was tried rather than assumed. Naming the finding's exact commit leaves it reported. A path alongside a value pattern still excuses the value at any path, because the checks in an allowlist block are alternatives and not a conjunction. A fingerprint naming the exact finding is accepted by the parser and then suppresses nothing. A stopword cannot reach it either, because stopwords are matched against the secret the rule matched - here the token alone - and not against its line."
+regexTarget = "match"
+regexes = [
+  '''ghp_[0-9]{10}[a-z]{10}[A-Z]{10}[0-9]{6}''',
 ]

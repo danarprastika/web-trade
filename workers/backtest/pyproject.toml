@@ -67,6 +67,20 @@ disallow_untyped_defs = true
 # webtrade-research is a local workspace package, not a PyPI install, so mypy cannot find it
 # by name alone. Without this it reports the import as missing and then types every value that
 # crosses it as Any — which under `strict` silently downgrades a function's real return type
-# instead of reporting the missing path. The entry mirrors the pytest `pythonpath` above so the
-# two tools resolve the package from the same place.
+# instead of reporting the missing path.
+#
+# These are the same two paths the pytest `pythonpath` above declares, and for a long time the
+# comment here said the two tools therefore resolve the package from the same place. They do not,
+# and the difference is the whole reason this step used to fail. pytest resolves `pythonpath`
+# relative to rootdir — the directory holding this file — so it works from any working directory.
+# mypy resolves `mypy_path` relative to the CURRENT WORKING DIRECTORY. From the repository root
+# these entries name `<root>/src` and `<root>/../research/src`, and neither exists, so mypy
+# reported four import-not-found errors and the step could never pass. Installing the package
+# does not rescue it: the wheel ships no `py.typed` marker, so there is no typed distribution to
+# fall back on either.
+#
+# The entries are correct; they are relative to THIS directory. Invoke mypy from here, as the
+# workflow's lint step does with `(cd workers/backtest && python -m mypy src)`, and
+# tests/ci/test_ci_workflow.py asserts that every mypy invocation in the workflow runs from a
+# directory where this file's mypy_path resolves. Change one and the assertion fails.
 mypy_path = ["src", "../research/src"]

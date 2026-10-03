@@ -16,6 +16,7 @@ Run:
 
 from __future__ import annotations
 
+import copy
 import importlib.util
 import re
 import shutil
@@ -356,6 +357,24 @@ def test_every_codeql_init_step_passes_inputs_the_action_actually_defines(workfl
     assert not problems, "\n".join(problems)
 
 
+def _resolve_matrix_value(raw: object, leg: dict) -> str:
+    """Resolve a `${{ matrix.<key> }}` expression against one `matrix.include` entry.
+
+    A workflow that scopes a step per matrix leg passes the expression through as a string, so a
+    test that reads it gets `${{ matrix.build-mode }}` rather than `manual`. Comparing that to a
+    literal can only ever fail, and a test that wraps such a comparison in `if ...:` never runs at
+    all. This resolves the expression the same way the Actions runner would, so an assertion about
+    the Go leg is about the Go leg.
+    """
+    if not isinstance(raw, str):
+        return ""
+    match = re.fullmatch(r"\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}", raw.strip())
+    if match is None:
+        return raw
+    value = leg.get(match.group(1))
+    return "" if value is None else str(value)
+
+
 def test_the_go_sast_leg_builds_every_workspace_module_rather_than_autobuilding_the_root(
     workflow: dict,
 ) -> None:
@@ -367,11 +386,14 @@ def test_the_go_sast_leg_builds_every_workspace_module_rather_than_autobuilding_
     discovered Go projects" - a message naming neither a module nor the cause. The fix is a
     manual build that iterates the modules go.work actually declares.
 
-    Two properties are asserted rather than one. The build mode must not be autobuild, or the
-    leg fails for exactly the old reason. And the build must derive its module list from
+    Five properties are asserted rather than one. The build mode must resolve, through the
+    matrix, to `manual` - not autobuild, which fails for exactly the old reason, and not `none`,
+    which skips the build and leaves nothing to trace. The build must derive its module list from
     `go work edit`, because a hardcoded list is a sixth thing to remember: a module added to
     go.work would then be extracted by no one, which is the same invisible-pass class of defect
-    this repository has recorded repeatedly.
+    this repository has recorded repeatedly. The build must be gated to the Go leg, must precede
+    the analyse step, and must refuse an empty module list rather than succeeding having built
+    nothing.
     """
     assert (REPO_ROOT / "go.work").is_file(), "go.work is missing, so this gate's premise is stale"
     assert not (REPO_ROOT / "go.mod").is_file(), (
@@ -404,28 +426,58 @@ def test_the_go_sast_leg_builds_every_workspace_module_rather_than_autobuilding_
         "the SAST job must both initialise and analyse, or there is no database to analyse"
     )
 
-    build_mode = (init.get("with") or {}).get("build-mode")
-    assert build_mode != "autobuild", (
-        "the Go leg must not use autobuild: it builds from a root that has no go.mod and "
-        "therefore extracts nothing"
+    build_mode = _resolve_matrix_value(
+        (init.get("with") or {}).get("build-mode"), go_legs[0]
     )
-    if build_mode == "manual":
-        build_index = next(
-            (
-                i
-                for i, s in enumerate(steps)
-                if "go work edit" in (s.get("run") or "") and "go build" in (s.get("run") or "")
-            ),
-            None,
-        )
-        assert build_index is not None, (
-            "the Go leg declares build-mode: manual but no step builds the workspace, so "
-            "extraction has nothing to trace"
-        )
-        assert build_index < steps.index(analyse), (
-            "the build must happen before analysis: CodeQL traces the build it is given, and a "
-            "build after the analyse step extracts nothing"
-        )
+    assert build_mode == "manual", (
+        "the Go leg must resolve to build-mode: manual. It found "
+        f"{build_mode!r} instead. Autobuild builds from a root that has no go.mod and therefore "
+        "extracts nothing, and `none` skips the build entirely so there is nothing for CodeQL to "
+        "trace. The value is read through the matrix rather than taken literally, because the init "
+        "step passes the string '${{ matrix.build-mode }}': comparing the literal string against "
+        "'manual' cannot succeed, so an earlier version of this assertion was dead code that "
+        "appeared to pass while checking nothing."
+    )
+
+    build_index = next(
+        (
+            i
+            for i, s in enumerate(steps)
+            if "go work edit" in (s.get("run") or "") and "go build" in (s.get("run") or "")
+        ),
+        None,
+    )
+    assert build_index is not None, (
+        "the Go leg declares build-mode: manual but no step builds the workspace, so extraction "
+        "has nothing to trace"
+    )
+    assert build_index < steps.index(analyse), (
+        "the build must happen before analysis: CodeQL traces the build it is given, and a build "
+        "after the analyse step extracts nothing"
+    )
+    assert "go" in str((steps[build_index].get("if") or "")).lower(), (
+        "the workspace build must be gated to the Go leg; the matrix also runs javascript and "
+        "python, which have no workspace to build"
+    )
+
+    build_run = steps[build_index].get("run") or ""
+    assert re.search(r"done\s+<\s*(?!<|\()\S", build_run), (
+        "the build loop must read its module list from a plain file, not from a process "
+        "substitution. Under `set -euo pipefail` a failure inside `done < <(...)` does not "
+        "propagate to this step, and an empty list makes the loop body run zero times. Both are "
+        "exit 0 with nothing built, so a resolution that silently returned nothing would leave the "
+        "Go leg extracting nothing and reporting success"
+    )
+    assert (
+        re.search(r"test\s+-s\s+modules\.txt", build_run)
+        or re.search(r"-eq\s+0", build_run)
+        or re.search(r"!\s*-s\s+", build_run)
+    ), (
+        "the build step must refuse an empty module list before building anything. An empty list "
+        "is the same silent no-op the process-substitution form had, one level up: nothing is "
+        "built and the step passes. The go, dependency-scan and integration jobs each refuse it, "
+        "and this step has to as well"
+    )
 
 
 GITLEAKS_CONFIG = REPO_ROOT / ".gitleaks.toml"
@@ -538,6 +590,70 @@ def test_the_secret_scan_runs_the_repositorys_own_config_and_can_still_fail(
                 f"allowlist entry {index} excuses the whole path {path!r}. A value-shaped "
                 "exception cannot hide a future secret in a directory; a path-shaped one can"
             )
+
+
+def test_the_token_exception_neither_hides_a_credential_nor_excuses_the_proofs_own_value() -> None:
+    """The one value-shaped exception in .gitleaks.toml must be narrow, and coupled to the proof.
+
+    `.gitleaks.toml` excuses the shape of a single synthetic token, because two historical commits
+    carry it in whole and the scan covers history. That exception is value-shaped and this scanner
+    applies it everywhere - scoping it by commit, by path or by fingerprint was tried and each was
+    observed not to restrict anything, which is recorded in the config's own description.
+
+    So the proof cannot plant the same shape. If it did, the allowlist would suppress the planted
+    value and `scenario_planted_token_fails` would pass without the scan looking at all - a proof
+    that reports success because the thing it plants is invisible.
+
+    Both halves are checked here rather than asserted in prose, because both fail silently: a
+    widened exception hides a real credential, and a colliding planted value fakes a passing proof.
+    """
+    config = tomllib.loads(GITLEAKS_CONFIG.read_text(encoding="utf-8"))
+    patterns = [
+        pattern
+        for entry in (config.get("allowlists") or [])
+        for pattern in (entry.get("regexes") or [])
+    ]
+    # Combine the patterns as text. Compiling them first and interpolating the compiled objects
+    # yields the literal string "re.compile('ghp_…')", which matches nothing - so the assertion
+    # below would pass for a config that excuses every token in the world. Caught by running this
+    # against a deliberately widened exception, which is the only reason it is not still there.
+    token_patterns = [pattern for pattern in patterns if "ghp_" in pattern]
+
+    assert token_patterns, (
+        "expected .gitleaks.toml to carry a ghp_ exception, since the historical commits contain a "
+        "synthetic token in whole and the scan covers history"
+    )
+    combined = re.compile("|".join(f"(?:{p})" for p in token_patterns))
+
+    # A realistic token: the ghp_ prefix plus 36 random base62 characters. It carries the prefix on
+    # purpose. A control without it cannot fail this assertion whatever the exception matches,
+    # because every one of these patterns is anchored on the prefix - which is exactly the mistake
+    # that made an earlier version of this check unbreakable.
+    plausible = "ghp_7Kq2Wz9XpL4mBv6NcYd8Rt3HsJ5Fg1UaE0Zi"
+    assert len(plausible) == 4 + 36, "the control token must be a realistic token length"
+    assert not combined.search(plausible), (
+        "the token exception matches a realistic random token, so it is not narrow: a real GitHub "
+        "token committed anywhere in this repository would be excused. The pattern must describe "
+        "the one synthetic value's shape, which no random token has."
+    )
+
+    spec = importlib.util.spec_from_file_location(
+        "prove_secret_scan_gate_under_test", REPO_ROOT / "scripts" / "prove_secret_scan_gate.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    body = module.PLANTED_TOKEN.removeprefix("ghp_")
+    assert module.PLANTED_TOKEN.startswith("ghp_") and len(body) == 36, (
+        "the proof's planted token is not a well-formed ghp_ value, so the first scenario is not "
+        "testing the github-pat rule at all"
+    )
+    assert not combined.search(module.PLANTED_TOKEN), (
+        "the proof plants a token that .gitleaks.toml excuses. The first scenario would then pass "
+        "because the allowlist suppressed it, not because the scan detected anything. Plant a "
+        "differently shaped synthetic token."
+    )
 
 
 def test_every_action_is_pinned_to_a_full_commit_sha(workflow: dict) -> None:
@@ -1205,3 +1321,220 @@ def test_bash_gate_script_passes_a_workflow_with_one_valid_run_block(
 
     assert exit_code == 0, f"a workflow with one valid run: block was rejected. Output:\n{output}"
     assert "PASS (1 run: blocks parsed)" in output, output
+
+
+# --- Worker typecheck invocation (WI-192) --------------------------------------
+
+# A mypy invocation, with the working directory it establishes either through a `cd` in the same
+# command or through the step's own `working-directory:`. The closing paren of a subshell form is
+# excluded from the argument span so `(cd X && python -m mypy src)` yields the target `src`.
+_MYPY_INVOCATION = re.compile(
+    r"(?:\(\s*cd\s+(?P<dir>[^\s&;)]+)\s*&&\s*)?python\s+-m\s+mypy\b(?P<args>[^\n)]*)"
+)
+
+
+def _mypy_invocations(workflow: dict) -> list[tuple[str, Path, list[str]]]:
+    """Every mypy invocation in the workflow as (where, working directory, target paths).
+
+    Comment text is stripped per line first. A run: block here documents its own reasoning in
+    comments, and a rule that matched the documentation would report problems for an invocation
+    that does not exist - a failure that reads as a real defect and trains the reader to ignore it.
+    """
+    found: list[tuple[str, Path, list[str]]] = []
+    for job_name, job in sorted((workflow.get("jobs") or {}).items()):
+        for step in job.get("steps") or []:
+            script = str(step.get("run", ""))
+            if "mypy" not in script:
+                continue
+            step_dir = str(step.get("working-directory") or "")
+            for line in script.splitlines():
+                code = line.split("#", 1)[0]
+                match = _MYPY_INVOCATION.search(code)
+                if not match:
+                    continue
+                cwd = REPO_ROOT
+                for part in (step_dir, match.group("dir") or ""):
+                    if part:
+                        cwd = cwd / part
+                args = match.group("args").split()
+                # `--config-file X` takes a path as its value; reading that value as a target
+                # would send the config-file search up from the wrong directory.
+                targets = [
+                    arg
+                    for index, arg in enumerate(args)
+                    if not arg.startswith("-") and (index == 0 or args[index - 1] != "--config-file")
+                ]
+                found.append((f"job {job_name!r}: {line.strip()}", cwd, targets))
+    return found
+
+
+def _worker_mypy_problems(workflow: dict) -> list[str]:
+    """Every mypy invocation, checked against the paths the config it will read declares.
+
+    Returns a list of human-readable problems, empty when every invocation is sound. It is a
+    function rather than inline test body so the controls below drive this exact rule against a
+    mutated workflow, instead of asserting a second and weaker version of it - which is how the
+    duplicate-step and bash-gate checks in this file drifted apart in the first place.
+    """
+    invocations = _mypy_invocations(workflow)
+    if not invocations:
+        # Fail closed, in the shape scripts/check_workflow_bash.py uses. A rule that examined
+        # nothing must not report success.
+        return [
+            "no mypy invocation was found in the workflow, so no worker typecheck was checked; "
+            "a rule with nothing to examine must not pass"
+        ]
+
+    problems: list[str] = []
+    for where, cwd, targets in invocations:
+        if not targets:
+            problems.append(f"{where}: no path to check was passed to mypy")
+            continue
+
+        for target in targets:
+            if not (cwd / target).is_dir():
+                problems.append(
+                    f"{where}: {target!r} does not exist relative to the working directory it runs "
+                    f"in, {cwd.relative_to(REPO_ROOT) if cwd != REPO_ROOT else 'the repository root'}"
+                )
+
+        # The configuration mypy will read is the nearest pyproject.toml above the target that
+        # declares one. An explicit --config-file would win over that, but the relativity problem
+        # below is a property of the working directory either way, so it is checked regardless.
+        config = None
+        for candidate in [cwd / targets[0], *((cwd / targets[0]).parents)]:
+            pyproject = candidate / "pyproject.toml"
+            if not pyproject.is_file():
+                continue
+            try:
+                data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+            except (tomllib.TOMLDecodeError, UnicodeDecodeError):
+                continue
+            if "mypy" in data.get("tool", {}):
+                config = pyproject
+                break
+
+        if config is None:
+            problems.append(
+                f"{where}: no pyproject.toml declaring [tool.mypy] was found above {target!r}, so "
+                f"there is no strict configuration for this worker to be checked against"
+            )
+            continue
+
+        mypy_path = tomllib.loads(config.read_text(encoding="utf-8")).get("tool", {}).get("mypy", {})
+        for entry in mypy_path.get("mypy_path") or []:
+            if not (cwd / entry).is_dir():
+                problems.append(
+                    f"{where}: mypy reads {config.relative_to(REPO_ROOT)}, which declares "
+                    f"mypy_path {entry!r}, and mypy resolves mypy_path relative to the current "
+                    f"working directory - which for this invocation is "
+                    f"{cwd.relative_to(REPO_ROOT) if cwd != REPO_ROOT else 'the repository root'}, "
+                    f"where {entry!r} does not exist. Invoke mypy from the directory holding that "
+                    f"pyproject.toml."
+                )
+    return problems
+
+
+def test_every_worker_typecheck_runs_where_its_configured_paths_resolve(workflow: dict) -> None:
+    """WI-192. mypy was invoked from a directory where its own configured paths do not exist.
+
+    The two Python workers declare the same relative paths for the same purpose in the same
+    shape: `pythonpath = ["src", "../research/src"]` under [tool.pytest.ini_options] and
+    `mypy_path = ["src", "../research/src"]` under [tool.mypy]. workers/backtest/pyproject.toml
+    carries a comment stating the mypy entry exists so both tools resolve webtrade_research from
+    the same place. They do not, and the difference is exactly the trap:
+
+    pytest resolves `pythonpath` relative to rootdir - the directory holding the pyproject.toml -
+    so it works from any working directory. mypy resolves `mypy_path` relative to the CURRENT
+    WORKING DIRECTORY. From the repository root, where the workflow invoked it, those entries name
+    `<root>/src` and `<root>/../research/src`, and neither exists.
+
+    So the gate could not pass, and could not be rescued by installing the dependency either:
+    webtrade-research ships no py.typed marker, so mypy does not read the installed wheel and
+    reports the import as missing rather than as an untyped Any. Measured on this tree:
+    `python -m mypy workers/backtest/src` from the repository root exits 1 with four
+    import-not-found errors; the same command from workers/backtest exits 0; installing both local
+    packages changes neither number.
+
+    It was never observed because the job failed earlier, at the worker install steps (EV-083), and
+    the blocker on WI-107 recorded the python workers as pending rather than as a gate that had
+    never succeeded. A gate that always errors is the cheapest kind to miss: it produces no findings
+    to review, so nothing contradicts a record that says it is merely unobserved.
+
+    The check is static and general: it reads every mypy invocation in the workflow and verifies
+    each against the `mypy_path` of the configuration it will load, so a third worker, or a
+    future `working-directory:`, is covered by the same rule rather than by a new assertion.
+    """
+    problems = _worker_mypy_problems(workflow)
+    assert problems == [], "\n".join(problems)
+
+
+@pytest.mark.parametrize(
+    "replacement, expected",
+    [
+        (
+            "set -euo pipefail\npython -m mypy workers/research/src\n"
+            "python -m mypy workers/backtest/src\n",
+            "mypy_path '../research/src'",
+        ),
+        (
+            "set -euo pipefail\n(cd workers/research && python -m mypy src)\n"
+            "(cd workers/backtest/src && python -m mypy .)\n",
+            "mypy_path 'src'",
+        ),
+        (
+            "set -euo pipefail\npython -m ruff check workers/research workers/backtest\n",
+            "no mypy invocation was found",
+        ),
+    ],
+    ids=["invoked-from-the-root", "cd-into-the-wrong-directory", "worker-removed-entirely"],
+)
+def test_the_worker_typecheck_check_rejects_each_way_of_getting_it_wrong(
+    workflow: dict, replacement: str, expected: str
+) -> None:
+    """Three controls, because a rule that only fires on one shape proves nothing.
+
+    The first restores the original wiring exactly: both invocations from the repository root, which
+    is what shipped and what failed. The second keeps a `cd` but descends one level too far, into
+    the source directory rather than the worker root - which a rule that only asked whether a `cd`
+    was present would wave through, and which really does fail, because `src` then means
+    `workers/backtest/src/src`. The third deletes the invocation entirely, which must fail closed
+    rather than report a clean result having checked nothing.
+
+    What is deliberately NOT a control: `(cd workers/research && python -m mypy ../backtest/src)`.
+    That reads like a mistake and is not one - mypy_path resolves against the working directory, and
+    from workers/research both entries exist, so the invocation succeeds. A control asserting it
+    fails would encode a false belief about the tool to make the rule look thorough.
+    """
+    mutated = copy.deepcopy(workflow)
+    replaced = 0
+    for job in mutated["jobs"].values():
+        for step in job.get("steps") or []:
+            if "mypy" in str(step.get("run", "")):
+                step["run"] = replacement
+                replaced += 1
+    assert replaced, "the mutation did not find a mypy step to replace, so it proved nothing"
+
+    problems = _worker_mypy_problems(mutated)
+    assert problems, "the mutated workflow passed the check; the check does not detect the defect"
+    assert any(expected in problem for problem in problems), (
+        f"expected a problem naming {expected!r}, got:\n" + "\n".join(problems)
+    )
+
+
+def test_the_worker_typecheck_check_accepts_a_worker_with_no_configured_paths(workflow: dict) -> None:
+    """The positive control for the rule above, and the reason it is not a blanket refusal.
+
+    workers/research declares no `mypy_path`, because it imports nothing from the other worker. A
+    root-relative invocation is therefore correct for it, and a check that demanded a `cd` from
+    every worker would reject a valid configuration - the mistake of adding the guard to the wrong
+    side of the condition. This asserts the rule reads the configuration rather than pattern-matching
+    the shape of the command.
+    """
+    mutated = copy.deepcopy(workflow)
+    for job in mutated["jobs"].values():
+        for step in job.get("steps") or []:
+            if "mypy" in str(step.get("run", "")):
+                step["run"] = "set -euo pipefail\npython -m mypy workers/research/src\n"
+
+    assert _worker_mypy_problems(mutated) == []
