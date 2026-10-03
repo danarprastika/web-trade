@@ -1,0 +1,21 @@
+# Runtime dependencies of tests/contracts/validate_contracts.py.
+#
+# The contracts job runs the validator on a bare actions/setup-python interpreter, which
+# contains no third-party packages at all. The validator needs two of them: jsonschema for
+# validation, and referencing for the Registry that resolves relative $refs such as
+# 'decimal.schema.json'. Without this file the job exits 2 in about five seconds with
+# "FATAL: the 'jsonschema' and 'referencing' packages are required" and reports a contract
+# failure that is really a missing dependency.
+#
+# Exact pins, never floating, for the reason tests/ci/requirements.txt gives: a gate that
+# resolves a different version on the runner than on the developer's machine is not the gate
+# that was verified locally.
+#
+# The same two packages are declared in workers/research/pyproject.toml, because
+# test_schema_layer_rejects_document_cases runs this validator as a subprocess and therefore
+# needs them inside the research worker's own environment. Two declarations of one dependency
+# set is a drift risk, so tests/ci/test_ci_workflow.py asserts that these pins and that file's
+# pins are identical. Change both together or change neither.
+
+jsonschema==4.26.0
+referencing==0.37.0

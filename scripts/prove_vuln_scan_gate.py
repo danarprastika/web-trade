@@ -30,6 +30,7 @@ Usage:
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -162,15 +163,40 @@ def _write_fake_go(bin_dir: Path, modules: tuple[str, ...]) -> None:
         entries = ",".join('{"DiskPath":"%s"}' % m for m in modules)
     else:
         entries = ""
+    #
+    # The printf line was quoted wrongly and the shim never parsed. It emitted
+    #   printf '{"Use":[...]}\n"
+    # with the single quote opened and never closed and a stray double quote at the end, so bash
+    # aborted the shim with "unexpected EOF while looking for matching `''" and every one of the
+    # three resolve scenarios failed on the fake rather than on the step. It went unnoticed for
+    # the same reason as the rmdir defect above: the scenarios are skipped wherever jq is absent,
+    # and on the one host where jq is present the script's own stdout interleaved the parse error
+    # with "jq: command not found", which reads as a missing tool. A fixture that has never run is
+    # not a fixture, so the payload below is emitted as a single correctly closed quoted string.
     body = (
         b"#!/usr/bin/env bash\n"
         b'if [ "$1" = "work" ] && [ "$2" = "edit" ]; then\n'
-        b'  printf \'{"Use":[' + entries.encode("utf-8") + b"]}\\n\"\n"
+        b"  printf '{\"Use\":[" + entries.encode("utf-8") + b"]}\\n'\n"
         b"  exit 0\n"
         b"fi\n"
         b"exit 0\n"
     )
     _write_exec(bin_dir / "go", body)
+    # Asserted rather than trusted. This shim is the entire input to three scenarios, and the
+    # defect it carried was invisible precisely because nothing checked that it parsed. Fed to
+    # bash on stdin, not named on the command line, for the reason _run_bash documents: the bash
+    # reachable from a Windows path cannot read a `C:\...` script argument and eats the
+    # backslashes.
+    parsed = subprocess.run(
+        ["bash", "-s", "work", "edit", "-json"],
+        input=(bin_dir / "go").read_bytes(),
+        capture_output=True,
+    )
+    if parsed.returncode != 0 or b'"Use"' not in parsed.stdout:
+        raise SystemExit(
+            "prove_vuln_scan_gate: the fake `go` shim does not answer `work edit -json` "
+            f"(exit {parsed.returncode}): {parsed.stderr.decode('utf-8', 'replace')}"
+        )
 
 
 def _build_sandbox(*, with_go: bool, modules: tuple[str, ...] = (), finding_module: str | None = None) -> tuple[Path, Path]:
@@ -243,6 +269,116 @@ def _scan_log(repo: Path) -> list[str]:
 
 def _out(completed: subprocess.CompletedProcess[bytes]) -> str:
     return completed.stdout.decode("utf-8", "replace") + completed.stderr.decode("utf-8", "replace")
+
+
+# --------------------------------------------------------------------------------------------
+# Can the executed step run jq? Measured inside bash, because that is the shell the step runs in.
+# --------------------------------------------------------------------------------------------
+
+
+def _bash_tool_path(tool: str) -> str | None:
+    """The path bash itself resolves `tool` to, or None if bash cannot run it.
+
+    Deliberately not `shutil.which`. That answers "can Python start it", which is a different
+    question from "can the committed block start it", and on this host the two disagree in a way
+    that inverts the verdict. Python finds `jq.exe`, so the resolve scenarios used to run, and then
+    the block's own `jq` call died with 127 because the bash on PATH is the WSL bash and it
+    resolves extensionless names only. The scenarios then reported a gate defect where the honest
+    verdict was "this host cannot execute the step's own filter". The skip is real coverage and it
+    has to be decided in the step's environment, not in the harness's.
+    """
+    probe = subprocess.run(
+        ["bash", "-c", f"command -v {shlex.quote(tool)}"], capture_output=True
+    )
+    if probe.returncode != 0:
+        return None
+    found = probe.stdout.decode("utf-8", "replace").strip()
+    return found or None
+
+
+def _bash_can_run(command: str) -> bool:
+    """Whether bash can execute `command`, asked with its `--version` rather than by inspection.
+
+    A path that exists is not a path that runs. Windows binaries are executable under WSL
+    interop, and a jq installed this way reports its version, so the probe is the real question.
+
+    The command is interpolated into the script rather than passed as `"$1"`. The bash reached
+    through the Windows path is the WSL launcher, and it does not hand positional parameters to
+    `-c` in a way that survives this call - a probe written that way reports every binary as
+    unrunnable, which would have silently downgraded all three resolve scenarios to a skip again.
+    """
+    probe = subprocess.run(
+        ["bash", "-c", f"{shlex.quote(command)} --version"], capture_output=True
+    )
+    return probe.returncode == 0
+
+
+def _wsl_candidates(windows_path: str) -> list[str]:
+    """Every WSL spelling of a Windows path worth trying, most likely first.
+
+    The extension case is not cosmetic. `shutil.which("jq")` builds its candidate from PATHEXT
+    and hands back `jq.EXE`, and the Windows filesystem opens that without complaint while the
+    WSL interop launch of the same path fails. The lowercase spelling is the one that runs, so
+    both are tried rather than the first one being assumed.
+    """
+    drive, sep, rest = windows_path.partition(":")
+    if not sep or len(drive) != 1 or not rest.startswith("\\"):
+        return [windows_path]
+    root = f"/mnt/{drive.lower()}"
+    head, dot, ext = rest.rpartition(".")
+    spellings = [rest]
+    if dot and head:
+        spellings += [f"{head}.exe", f"{head}.EXE"]
+    return [root + spelling.replace("\\", "/") for spelling in dict.fromkeys(spellings)]
+
+
+def _jq_executable() -> str | None:
+    """An absolute path the step's own shell can launch jq from, or None if this host has none."""
+    for name in ("jq.exe", "jq"):
+        host = shutil.which(name)
+        if host is None:
+            continue
+        targets = _wsl_candidates(host) if os.name == "nt" else [host]
+        for target in targets:
+            if _bash_can_run(target):
+                return target
+    return None
+
+
+def _jq_reachable() -> bool:
+    """Whether the resolve scenarios can execute at all on this host.
+
+    True when bash resolves `jq` directly (a Linux runner, which is the environment these
+    scenarios are for), or when the host has a jq that bash can still launch by absolute path.
+    """
+    return _bash_tool_path("jq") is not None or _jq_executable() is not None
+
+
+def _ensure_jq(bin_dir: Path) -> bool:
+    """Give the executed block a `jq` it can run. Returns False only if this host has none.
+
+    Nothing is installed when bash already resolves `jq`, so on a runner the block runs against
+    the real jq exactly as committed. Otherwise a launcher goes into the sandbox bin dir - which
+    the scenario already puts first on PATH - that execs the real binary under the name the block
+    calls. That is not a fake: the block's own filter is still evaluated by jq, and the launcher
+    adds no logic of its own. It exists because the alternative is three scenarios that never run
+    on a developer's machine, which is precisely how the two defects fixed in this file survived.
+    """
+    if _bash_tool_path("jq") is not None:
+        return True
+    target = _jq_executable()
+    if target is None:
+        return False
+    # The CR filter is a host adaptation, and it is narrow on purpose. A native jq.exe writes
+    # CRLF on stdout, which inside this WSL bash arrives as a trailing \r on every path, so
+    # `while read -r m` yields "contracts/go\r" and the step's own `-f "$m/go.mod"` test fails on
+    # every module - a failure about this host's line endings reported as a failure about the
+    # gate. On the runner these scenarios exist for, jq writes LF and `tr -d '\r'` is a no-op.
+    # Nothing else is filtered, the block's own filter still runs, and the bytes the block reads
+    # are the bytes it would read on Linux.
+    launcher = f'#!/usr/bin/env bash\n"{target}" "$@" | tr -d "\\r"\n'
+    _write_exec(bin_dir / "jq", launcher.encode("utf-8"))
+    return True
 
 
 # --------------------------------------------------------------------------------------------
@@ -469,6 +605,13 @@ def scenario_empty_module_list_fails(scan: str) -> Outcome:
 
 def scenario_resolve_lists_every_module(resolve: str) -> Outcome:
     bin_dir, repo = _build_sandbox(with_go=True, modules=MODULES)
+    if not _ensure_jq(bin_dir):
+        return Outcome(
+            "resolve step lists every module",
+            False,
+            "HARNESS failure, not a gate failure: main() decided jq was reachable and this "
+            "scenario could not provide it, so nothing about the step was executed",
+        )
     result = _run_bash(resolve, repo, bin_dir)
     listed_file = repo / "modules.txt"
     listed = (
@@ -489,6 +632,13 @@ def scenario_resolve_lists_every_module(resolve: str) -> Outcome:
 
 def scenario_resolve_refuses_empty(resolve: str) -> Outcome:
     bin_dir, repo = _build_sandbox(with_go=True, modules=())
+    if not _ensure_jq(bin_dir):
+        return Outcome(
+            "resolve step refuses an empty workspace",
+            False,
+            "HARNESS failure, not a gate failure: jq was unreachable inside the step's shell, so "
+            "the step's own filter was never executed",
+        )
     result = _run_bash(resolve, repo, bin_dir)
     text = _out(result)
     if result.returncode == 0:
@@ -509,8 +659,30 @@ def scenario_resolve_refuses_empty(resolve: str) -> Outcome:
 def scenario_resolve_refuses_missing_go_mod(resolve: str) -> Outcome:
     modules = ("contracts/go", "services/typo")
     bin_dir, repo = _build_sandbox(with_go=True, modules=modules)
-    # `services/typo` is listed by the fake workspace but has no go.mod on disk.
-    (repo / "services" / "typo").rmdir()
+    if not _ensure_jq(bin_dir):
+        return Outcome(
+            "resolve step refuses a module with no go.mod",
+            False,
+            "HARNESS failure, not a gate failure: jq was unreachable inside the step's shell, so "
+            "the step's own filter was never executed",
+        )
+    # `services/typo` is listed by the fake workspace but does not exist on disk, which is what a
+    # typo in go.work looks like and what the resolve step's `-f "$m/go.mod"` test refuses.
+    #
+    # It is removed recursively rather than with rmdir. The first version of this line called
+    # rmdir() on a directory _build_sandbox had just populated with a go.mod, which raised
+    # WinError 145 on any platform where rmdir refuses a non-empty directory. That exception
+    # escaped main() as a traceback, so this scenario has never actually run: it is skipped
+    # wherever jq is absent, and on the Ubuntu runner - the one place jq is present - it raised
+    # instead of reporting. The dependency-scan job has been red on this step since the scenario
+    # was introduced, and the traceback named no property, so the failure read as a broken script
+    # rather than as a broken scenario. Confirmed against the runner's own step list before this
+    # was fixed.
+    shutil.rmtree(repo / "services" / "typo")
+    assert not (repo / "services" / "typo").exists(), (
+        "fixture drift: the missing-module directory still exists, so this scenario would be "
+        "asserting the sandbox rather than the step"
+    )
     result = _run_bash(resolve, repo, bin_dir)
     text = _out(result)
     if result.returncode == 0:
@@ -636,7 +808,9 @@ def main() -> int:
 
     # Resolved before any sandbox PATH is built, so the real tool is never shadowed by a fake.
     repo_tool = shutil.which("govulncheck")
-    has_jq = shutil.which("jq") is not None
+    # Measured inside bash, not on the host PATH, because bash is what executes the step. See
+    # _jq_reachable for why getting this wrong inverts the verdict rather than merely coarsening it.
+    has_jq = _jq_reachable()
 
     outcomes: list[Outcome] = [
         scenario_clean(scan),
@@ -654,7 +828,11 @@ def main() -> int:
             scenario_resolve_refuses_missing_go_mod(resolve),
         ]
     else:
-        print("  [SKIP] resolve-step scenarios: no jq on PATH, so the block's own filter was not executed")
+        print(
+            "  [SKIP] resolve-step scenarios: bash on this host cannot run jq, so the block's own\n"
+            "         filter was not executed. This is real coverage that did not happen; on a\n"
+            "         runner with jq installed all three run and all three assert."
+        )
 
     if repo_tool:
         outcomes.append(scenario_real_scanner(repo_tool))

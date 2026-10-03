@@ -21,6 +21,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -193,6 +194,350 @@ def test_the_ci_suite_dependencies_are_pinned_not_floating(workflow: dict) -> No
     assert not unpinned, (
         f"tests/ci/requirements.txt must pin every dependency exactly; unpinned: {unpinned}"
     )
+
+
+# The dependency set the contract validator imports, named rather than discovered, so that a
+# dependency added to the validator without a pin is a test failure and not a runner-only
+# surprise. Keep in step with the imports at the top of tests/contracts/validate_contracts.py.
+CONTRACT_VALIDATOR_REQUIREMENTS = REPO_ROOT / "tests" / "contracts" / "requirements.txt"
+RESEARCH_PYPROJECT = REPO_ROOT / "workers" / "research" / "pyproject.toml"
+
+
+def _pinned_pairs(text: str) -> dict[str, str]:
+    """Parse `name==version` lines into a mapping, ignoring comments and blanks."""
+    pairs: dict[str, str] = {}
+    for line in text.splitlines():
+        entry = line.strip()
+        if entry and not entry.startswith("#"):
+            name, sep, version = entry.partition("==")
+            if sep:
+                pairs[name.strip().lower()] = version.strip()
+    return pairs
+
+
+def test_every_job_that_runs_the_contracts_validator_first_installs_its_dependencies(
+    workflow: dict,
+) -> None:
+    """Any job that runs the contract validator must install its pinned dependencies first.
+
+    The contracts job went straight from actions/setup-python to the validator with nothing
+    installed between them, and the validator's own answer to a missing package is exit 2 with
+    "FATAL: the 'jsonschema' and 'referencing' packages are required". Six seconds of red, every
+    run, reading as a contract failure. It is asserted for every such job rather than for the one
+    that was diagnosed, because the same omission in a future job would be reported by the
+    validator as a broken corpus rather than as a missing install line.
+
+    Order is part of the assertion: an install after the validator is the same defect with the
+    lines in the wrong order.
+    """
+    jobs = workflow.get("jobs") or {}
+    offenders: list[str] = []
+    checked = 0
+    for name, job in jobs.items():
+        steps = (job or {}).get("steps") or []
+        runs = [s.get("run", "") for s in steps if isinstance(s, dict) and s.get("run")]
+        first_use = next(
+            (i for i, run in enumerate(runs) if "validate_contracts.py" in run),
+            None,
+        )
+        if first_use is None:
+            continue
+        checked += 1
+        installed = any(
+            "pip install" in run and "tests/contracts/requirements.txt" in run
+            for run in runs[:first_use]
+        )
+        if not installed:
+            offenders.append(
+                f"{name} (runs validate_contracts.py at step {first_use} with no earlier "
+                f"pip install of tests/contracts/requirements.txt)"
+            )
+
+    assert checked, (
+        "no job runs the contract validator any more, so the canonical corpus is no longer "
+        "enforced by CI and every binding can drift from it silently"
+    )
+    assert not offenders, (
+        "these jobs run the contract validator without installing its dependencies. "
+        "actions/setup-python gives a clean interpreter, so the validator exits 2 with its own "
+        "FATAL message before a single case is checked:\n  " + "\n  ".join(offenders)
+    )
+
+
+def test_the_contracts_validators_dependencies_are_pinned_and_not_duplicated_drift() -> None:
+    """The validator's dependency set is pinned exactly, and the research worker agrees with it.
+
+    Two declarations of one dependency set exist on purpose: tests/contracts/requirements.txt is
+    what the contracts job installs, and workers/research/pyproject.toml is what
+    test_schema_layer_rejects_document_cases needs because that test runs the validator as a
+    subprocess inside the research worker's own environment. That arrangement is only safe while
+    the two agree, so the agreement is asserted here rather than left to a reader to notice.
+
+    The failure this pins down is not hypothetical either: the research worker's pin was
+    jsonschema==4.26.1, a version that has never existed on PyPI, so every install of that extra
+    failed to resolve and the validator was never executed in either job.
+    """
+    assert CONTRACT_VALIDATOR_REQUIREMENTS.is_file(), (
+        "tests/contracts/requirements.txt is missing, so the contracts job has nothing to "
+        "install and the validator exits 2 on a clean interpreter"
+    )
+    pins = _pinned_pairs(CONTRACT_VALIDATOR_REQUIREMENTS.read_text(encoding="utf-8"))
+    assert pins, "tests/contracts/requirements.txt declares no dependencies"
+    unpinned = [
+        line.strip()
+        for line in CONTRACT_VALIDATOR_REQUIREMENTS.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#") and "==" not in line
+    ]
+    assert not unpinned, (
+        "tests/contracts/requirements.txt must pin every dependency exactly; unpinned: "
+        f"{unpinned}"
+    )
+
+    assert RESEARCH_PYPROJECT.is_file(), "workers/research/pyproject.toml is missing"
+    project = tomllib.loads(RESEARCH_PYPROJECT.read_text(encoding="utf-8"))
+    dev = ((project.get("project") or {}).get("optional-dependencies") or {}).get("dev") or []
+    research_pins = _pinned_pairs("\n".join(dev))
+
+    for name, version in sorted(pins.items()):
+        assert name in research_pins, (
+            f"{name} is installed for the contracts job but is not declared in the research "
+            "worker's dev extra, so the research worker's own run of the validator would fail "
+            "on a missing package"
+        )
+        assert research_pins[name] == version, (
+            f"{name} is pinned at {version} in tests/contracts/requirements.txt and "
+            f"{research_pins[name]} in workers/research/pyproject.toml. The contracts job and "
+            "the research worker run the same validator, so one dependency set means one pin."
+        )
+
+
+def test_every_codeql_init_step_passes_inputs_the_action_actually_defines(workflow: dict) -> None:
+    """A CodeQL init input that does not exist is ignored, not rejected.
+
+    This workflow passed `language:` where codeql-action v3 takes `languages`. The action's own
+    warning listed `language` among "unexpected input(s)", the job carried on, and every one of
+    the three matrix legs silently initialised ALL languages instead of its own. Each then ran
+    Go's autobuild, each failed on Go extraction, and not one of them analysed the language its
+    name claimed - a job named "SAST (CodeQL) (python)" that never looked at the Python.
+
+    An unknown input is the quiet kind of typo, so it is asserted here: the plural input is
+    required, the singular one is rejected outright, and the value must be a matrix expression
+    or a literal list rather than a bare string that the action would silently not understand.
+    """
+    jobs = workflow.get("jobs") or {}
+    inits: list[tuple[str, dict]] = []
+    for name, job in jobs.items():
+        for step in (job or {}).get("steps") or []:
+            if isinstance(step, dict) and str(step.get("uses", "")).startswith(
+                "github/codeql-action/init@"
+            ):
+                inits.append((name, step))
+
+    assert inits, "no CodeQL init step found; the assertion below would be vacuous"
+
+    problems: list[str] = []
+    for name, step in inits:
+        with_block = step.get("with") or {}
+        if "language" in with_block:
+            problems.append(
+                f"job {name}: passes 'language', which codeql-action does not define, so the "
+                "step silently analysed every language instead of the requested one"
+            )
+        languages = with_block.get("languages")
+        if languages is None:
+            problems.append(f"job {name}: no 'languages' input, so nothing is scoped")
+        elif not (
+            isinstance(languages, list)
+            or (isinstance(languages, str) and "${{" in languages)
+        ):
+            problems.append(
+                f"job {name}: languages={languages!r} is neither a list nor an expression"
+            )
+    assert not problems, "\n".join(problems)
+
+
+def test_the_go_sast_leg_builds_every_workspace_module_rather_than_autobuilding_the_root(
+    workflow: dict,
+) -> None:
+    """The Go SAST leg cannot use autobuild, and must resolve its module list from go.work.
+
+    Autobuild builds from the checkout root. This repository has go.work at the root and
+    deliberately no root go.mod, so that build fails outright ("directory prefix . does not
+    contain modules listed in go.work"), and CodeQL reports it as "Extraction failed for all
+    discovered Go projects" - a message naming neither a module nor the cause. The fix is a
+    manual build that iterates the modules go.work actually declares.
+
+    Two properties are asserted rather than one. The build mode must not be autobuild, or the
+    leg fails for exactly the old reason. And the build must derive its module list from
+    `go work edit`, because a hardcoded list is a sixth thing to remember: a module added to
+    go.work would then be extracted by no one, which is the same invisible-pass class of defect
+    this repository has recorded repeatedly.
+    """
+    assert (REPO_ROOT / "go.work").is_file(), "go.work is missing, so this gate's premise is stale"
+    assert not (REPO_ROOT / "go.mod").is_file(), (
+        "a root go.mod now exists, so CodeQL autobuild may work again; revisit whether the "
+        "manual workspace build is still the right structure"
+    )
+
+    jobs = workflow.get("jobs") or {}
+    assert "sast" in jobs, "the SAST job is missing, so Go is never statically analysed"
+    job = jobs["sast"]
+
+    matrix = ((job.get("strategy") or {}).get("matrix") or {})
+    legs = matrix.get("include") or []
+    go_legs = [leg for leg in legs if leg.get("language") == "go"]
+    assert go_legs, (
+        "the SAST matrix declares no Go leg; Go is the language this repository is written in "
+        "and its absence is a silent loss of coverage"
+    )
+
+    steps = [s for s in (job.get("steps") or []) if isinstance(s, dict)]
+    init = next(
+        (s for s in steps if str(s.get("uses", "")).startswith("github/codeql-action/init@")),
+        None,
+    )
+    analyse = next(
+        (s for s in steps if str(s.get("uses", "")).startswith("github/codeql-action/analyze@")),
+        None,
+    )
+    assert init is not None and analyse is not None, (
+        "the SAST job must both initialise and analyse, or there is no database to analyse"
+    )
+
+    build_mode = (init.get("with") or {}).get("build-mode")
+    assert build_mode != "autobuild", (
+        "the Go leg must not use autobuild: it builds from a root that has no go.mod and "
+        "therefore extracts nothing"
+    )
+    if build_mode == "manual":
+        build_index = next(
+            (
+                i
+                for i, s in enumerate(steps)
+                if "go work edit" in (s.get("run") or "") and "go build" in (s.get("run") or "")
+            ),
+            None,
+        )
+        assert build_index is not None, (
+            "the Go leg declares build-mode: manual but no step builds the workspace, so "
+            "extraction has nothing to trace"
+        )
+        assert build_index < steps.index(analyse), (
+            "the build must happen before analysis: CodeQL traces the build it is given, and a "
+            "build after the analyse step extracts nothing"
+        )
+
+
+GITLEAKS_CONFIG = REPO_ROOT / ".gitleaks.toml"
+
+
+def test_no_job_contains_the_same_step_twice(workflow: dict) -> None:
+    """A repeated step runs twice, and nothing else in this suite notices.
+
+    YAML permits two list entries with the same keys, so a duplicated step is not a parse error,
+    not a bash syntax error, and not a failure of any behavioural gate: the workflow stayed green
+    while running one command twice. It arrived here as an editing accident - a step was re-inserted
+    beside the one it replaced - and the run that would have caught it did not exist. That is the
+    whole justification for this test.
+
+    Both halves are asserted. A repeated `name` is the readable case, and a repeated `uses` is the
+    case where the step has no name to repeat, which is how most `uses:` steps are written here.
+    """
+    offenders: list[str] = []
+    for name, job in (workflow.get("jobs") or {}).items():
+        steps = [s for s in ((job or {}).get("steps") or []) if isinstance(s, dict)]
+        for field in ("name", "uses"):
+            seen: set[str] = set()
+            repeated: list[str] = []
+            for step in steps:
+                value = step.get(field)
+                if not isinstance(value, str) or not value:
+                    continue
+                if value in seen:
+                    repeated.append(value)
+                seen.add(value)
+            for value in repeated:
+                offenders.append(f"job {name}: {field} {value!r} appears on more than one step")
+
+    assert not offenders, (
+        "these steps are duplicated, so each runs more than once and a change to one copy leaves "
+        "the other running something stale:\n  " + "\n  ".join(offenders)
+    )
+
+
+def test_the_secret_scan_runs_the_repositorys_own_config_and_can_still_fail(
+    workflow: dict,
+) -> None:
+    """The secret scan's wiring must be complete, and its gate must still be able to fail.
+
+    Three separate ways this job can be green without scanning anything, all asserted here.
+
+    A `.gitleaks.toml` that is not passed to the scanner. Gitleaks finds a config in its own
+    working directory, which inside this container is not the repository, so a config that exists
+    but is never named runs nothing. The step must pass `--config` explicitly.
+
+    A config that disables rules. An allowlist is the one change to a secret gate that can turn it
+    into a gate that never fires, and the way that happens quietly is a rule switched off rather
+    than a value excused. `useDefault = true` must be set and no rule may be disabled.
+
+    A gate nobody can watch fail. The scan runs with an allowlist, so the job needs the proof that
+    plants a credential and requires a failure. The proof being present in scripts/ is worthless
+    if the job does not run it.
+    """
+    jobs = workflow.get("jobs") or {}
+    assert "secret-scan" in jobs, "docs/06 section 7 requires a secret scan on every merge"
+    steps = [
+        s for s in ((jobs["secret-scan"].get("steps")) or []) if isinstance(s, dict)
+    ]
+    runs = [s.get("run") or "" for s in steps]
+    scan = next((run for run in runs if "gitleaks" in run and "detect" in run), None)
+    assert scan is not None, (
+        "the secret-scan job must actually run the scanner; a job that exists without running it "
+        "reports a clean scan it never performed"
+    )
+
+    assert "--config" in scan and ".gitleaks.toml" in scan, (
+        "the scan step must pass the repository's .gitleaks.toml explicitly. Gitleaks only "
+        "auto-discovers a config in its own working directory, which is not the repository inside "
+        "this container, so an unnamed config is a config that does not run"
+    )
+    assert "--exit-code" in scan, (
+        "the scan step must pass --exit-code, otherwise gitleaks reports findings on stdout and "
+        "exits 0 and the gate cannot fail on a finding"
+    )
+    assert any("prove_secret_scan_gate.py" in run for run in runs), (
+        "the secret-scan job must run scripts/prove_secret_scan_gate.py. The scan runs with an "
+        "allowlist, and an allowlist widened until the scan is blind leaves this job green; the "
+        "proof is what makes that failure visible"
+    )
+
+    assert GITLEAKS_CONFIG.is_file(), (
+        ".gitleaks.toml is missing, so the scan step's --config names a file that does not exist"
+    )
+    config = tomllib.loads(GITLEAKS_CONFIG.read_text(encoding="utf-8"))
+    assert (config.get("extend") or {}).get("useDefault") is True, (
+        ".gitleaks.toml must set [extend] useDefault = true, so the scan keeps gitleaks' own rule "
+        "set instead of running whatever rules this file happens to declare"
+    )
+    disabled = [
+        name
+        for name, rule in (config.get("rules") or {}).items()
+        if isinstance(rule, dict) and rule.get("enabled") is False
+    ]
+    assert not disabled, (
+        "these rules are disabled in .gitleaks.toml. A disabled rule is indistinguishable from a "
+        f"rule that found nothing: {disabled}"
+    )
+    for index, entry in enumerate(config.get("allowlists") or []):
+        assert entry.get("description"), (
+            f"allowlist entry {index} has no description, so an unexplained exception is "
+            "indistinguishable from a forgotten one"
+        )
+        for path in entry.get("paths") or []:
+            assert "*" not in path, (
+                f"allowlist entry {index} excuses the whole path {path!r}. A value-shaped "
+                "exception cannot hide a future secret in a directory; a path-shaped one can"
+            )
 
 
 def test_every_action_is_pinned_to_a_full_commit_sha(workflow: dict) -> None:

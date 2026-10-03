@@ -1,0 +1,52 @@
+# Gitleaks configuration for the secret-scan CI job.
+#
+# The default rule set is used in full. `useDefault = true` keeps every default rule enabled, and
+# no rule below is switched off: a disabled rule is indistinguishable from a rule that found
+# nothing, and this job exists to make that distinction impossible to miss.
+#
+# There are exactly two exceptions, both shaped by the value that triggered them rather than by
+# the file it appeared in. That distinction is the whole point. An allowlist keyed on a path would
+# silently excuse any future secret pasted into contracts/, db/tests/ or docs/; an allowlist keyed
+# on a value shape excuses only that shape.
+#
+# History is scanned - the job checks out full history, because a secret that was committed and
+# later removed is still exposed - so an allowlist is the only lever available here. Changing the
+# fixtures would not clear the finding, because the offending values are already in the history
+# being scanned.
+#
+# scripts/prove_secret_scan_gate.py is the check on this file. It runs the committed scan command
+# against a scratch repository that contains a planted, unmistakably secret-shaped value and
+# requires it to fail, so widening either exception until the gate is blind is a failing command
+# rather than a green job.
+
+title = "web-trade"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Fixture idempotency keys, which the generic-api-key rule reads as credentials because the field name contains 'key'. An idempotency key is a client-chosen request deduplication token, not a secret: it grants nothing and authenticates nothing."
+regexTarget = "match"
+regexes = [
+  # Matches `idempotency_key` assignments whose value is a human-readable hyphenated token, such
+  # as "idempotency_key": "order-place-trader-01-20260928-001" in contracts/fixtures and
+  # WHERE idempotency_key = 'idempotency-key-0001' in db/tests. The value part is required to
+  # contain at least one hyphen and to start with an alphanumeric, so a 64-character hex digest,
+  # a base64 blob, a UUID, or a bare alphanumeric token does not match. A real credential
+#   assigned to this field is still reported.
+  #
+  # Note what this exception does NOT do, because the scope is easy to over-read: gitleaks
+  # applies an allowlist regex to the span the rule itself matched, not to the surrounding line.
+  # `generic-api-key` matches `idempotency_key = <value>` as a unit, so this regex decides that
+  # rule's findings; a rule that matches only the credential, such as `github-pat`, never produces
+  # a span containing the field name and is therefore never excused by this line. Widening this
+  # regex to "any value in this field" would silence generic-api-key for real credentials there,
+  # which is precisely what scripts/prove_secret_scan_gate.py fails on.
+  '''(?i)idempotency_key"?\s*[:=]\s*["']?[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+["']?''',
+]
+
+[[allowlists]]
+description = "One phrase of English prose in docs/18 that the generic-api-key rule read as a credential pair: the keyword 'access' in 'access is least-privilege' followed by the next token, 'jurisdiction/venue'."
+stopwords = [
+  "jurisdiction/venue",
+]

@@ -26,7 +26,20 @@ dev = [
     "pytest==9.0.1",
     "ruff==0.15.1",
     "mypy==1.19.1",
-    "jsonschema==4.26.1",
+    # test_schema_layer_rejects_document_cases in tests/test_canonical.py runs
+    # tests/contracts/validate_contracts.py as a subprocess, so these are the two packages that
+    # test actually executes: the validator imports jsonschema for validation and `referencing`
+    # for the Registry that resolves relative $refs. `referencing` is declared here rather than
+    # left to arrive as a transitive dependency of jsonschema, because a direct import of an
+    # undeclared package is a missing pin, not a convenience.
+    #
+    # 4.26.0, not 4.26.1. 4.26.1 does not exist on PyPI - 4.26.0 is the current release - and
+    # every `pip install "./workers/research[dev]"` therefore failed to resolve, which took out
+    # the research worker's install step, the backtest worker's install that resolves the same
+    # dependency set, and the dependency-scan job's python audit, all on a pin nothing had ever
+    # installed. 4.26.0 requires referencing>=0.28.4, so 0.37.0 is inside its supported range.
+    "jsonschema==4.26.0",
+    "referencing==0.37.0",
 ]
 
 [tool.hatch.build.targets.wheel]
