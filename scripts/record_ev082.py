@@ -435,7 +435,8 @@ RECORDS = [
         ),
         "result": (
             "The workflow parses to 12 jobs and scripts/check_workflow_bash.py reports PASS (54 run: "
-            "blocks parsed). The full tests/ci suite passes, 170 tests. The new assertion passes on "
+            "blocks parsed). The full tests/ci suite passes, 171 tests as measured on the fix commit. "
+            "The new assertion passes on "
             "the real workflow and fails on a mutation that duplicates a step, with the message "
             "\"job sast: uses 'actions/setup-go@...' appears on more than one step\"."
         ),

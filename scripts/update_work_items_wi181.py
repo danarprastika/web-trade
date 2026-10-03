@@ -361,7 +361,8 @@ WI_188 = {
     "`- name: validate canonical schemas against the shared corpus` entries in the job's step list. "
     "YAML permits duplicate list entries with the same keys, so this was not a parse error; "
     "scripts/check_workflow_bash.py validated every run block and passed; the full tests/ci suite "
-    "passed 170 tests; and the workflow would have run the validator twice in every future run, with "
+    "passed, 171 tests as measured after the fix; and the workflow would have run the validator twice "
+    "in every future run, with "
     "a change to one copy leaving the other executing something stale.",
     "notes": "Recorded because the gap is the interesting part, not the typo. Every gate in this "
     "repository checks what a step does; none of them checked how many times it appears. A gate that "

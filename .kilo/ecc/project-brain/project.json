@@ -17,7 +17,7 @@
       "4-language polyglot build: Go authoritative control plane, TypeScript/Next.js operator UI, Python research, Rust by ADR only (docs/02, docs/25 §4).",
       "13 bounded contexts and 9 control-plane modules with one-way authority flow (docs/01 §2, §7).",
       "Regulated financial domain: live trading with money movement, immutable ledger, dual-control approvals, legal/jurisdiction eligibility gates (docs/18, docs/23, docs/25 §3.7).",
-      "Repo currently contains ZERO executable code; all 8 phases are unstarted."
+      "Repo contained ZERO executable code at baseline_commit 15d978f, which is when this rating was assigned; all 8 phases were unstarted then. See current_state for the counts as of 7733977."
     ]
   },
   "source_of_truth": {
@@ -30,8 +30,12 @@
       "docs/00_README.md"
     ],
     "precedence_source": "docs/25 §9",
-    "g0_verified": true,
-    "g0_method": "SHA-256 + byte-length recompute of all 26 manifest documents"
+    "g0_mechanical_checks_verified": true,
+    "g0_mechanical_method": "SHA-256 + byte-length recompute of all 26 manifest documents",
+    "g0_gate_verdict": "PENDING_HUMAN_ATTESTATION",
+    "g0_gate_verdict_as_of": "2026-10-03T19:09:59Z",
+    "g0_gate_verdict_source": "evidence/gates/G0-gate-report.json, stamped against fa2156f",
+    "g0_caveat": "G0.1 through G0.7 are mechanically PASS. G0.8 is REQUIRES_HUMAN_ATTESTATION and no named human reviewer has signed the package, so the gate is NOT passed. This field is not a claim that G0 passed, and it must not be read as one."
   },
   "product_boundary": {
     "description": "AI-native proprietary trading platform across crypto, FX, equities, commodities.",
@@ -67,8 +71,17 @@
     "note": "PostgreSQL 17 is required and is expected to be provided via Docker. Docker daemon must be started before any persistence work."
   },
   "current_state": {
-    "tracked_files_at_head": 27,
-    "executable_code_at_head": 0,
+    "as_of_commit": "7733977",
+    "as_of": "2026-10-03T19:09:59Z",
+    "tracked_files_at_head": 445,
+    "executable_code_at_head": 322,
+    "executable_code_breakdown": {
+      "note": "executable_code_at_head counts go, python and typescript/javascript sources only. SQL migrations are counted separately and are not included in it.",
+      "go": 171,
+      "python": 147,
+      "typescript_javascript": 4,
+      "sql_migrations": 11
+    },
     "gates_passed": [],
     "gates_in_progress": ["G0"],
     "working_tree": "clean",
@@ -87,7 +100,7 @@
     "path": ".kilo/ecc/project-brain/requirements.md",
     "summary": "Execute docs/13 Phases 1-7 to reach G0-G10. Phase 8 (G11 live activation) is out of engineering scope and remains deny-by-default.",
     "first_delivery_boundary": "G0 + G1 (Phases 1-2: foundation and domain core)",
-    "current_work_item": "WI-101"
+    "current_work_item": "WI-188"
   },
   "team": {
     "model": "single-owner serial execution with bounded delegation",

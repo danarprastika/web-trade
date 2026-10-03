@@ -1367,6 +1367,29 @@
       "evidence_ref": [
         "EV-089"
       ]
+    },
+    {
+      "id": "WI-189",
+      "phase": 2,
+      "title": "Project Brain claimed G0 was verified and that the repository held no executable code, while the gate report it sits beside says G0 is pending a human signature and the tree holds 322 source files",
+      "status": "COMPLETED",
+      "priority": "high",
+      "acceptance_criteria": [
+        "No field in project.json claims the G0 gate passed, and the mechanical checks and the gate verdict are stated separately",
+        "The gate verdict recorded in project.json names the report it was read from and the commit that report is stamped against",
+        "current_state carries an as_of commit and file counts measured from that commit, and the counts are reproducible with git ls-files",
+        "The historical baseline statement in the scale rationale is dated to the commit it was true at, so it cannot be read as a present-tense claim",
+        "plan.current_work_item names the most recently completed item"
+      ],
+      "source": "Reading project.json against evidence/gates/G0-gate-report.json while closing out fa2156f, after scripts/verify_spec_gate.py had just reported G0.1-G0.7 PASS, G0.8 REQUIRES_HUMAN_ATTESTATION and a verdict of PENDING_HUMAN_ATTESTATION.",
+      "reproduction": "source_of_truth carried `\"g0_verified\": true` two lines above a method describing a SHA-256 and byte-length recompute, which establishes G0.1 through G0.7 and says nothing about G0.8. The same object carried `current_state.gates_passed: []`, so the file contradicted itself: the gate was verified and it had not passed. current_state also reported 27 tracked files and zero executable code, which were the counts at baseline_commit 15d978f, not at HEAD - the tree at 7733977 holds 445 tracked files including 171 Go, 147 Python, 4 TypeScript/JavaScript and 11 SQL sources. Nothing read any of these fields: a repository-wide grep for g0_verified, tracked_files_at_head, executable_code_at_head, gates_passed and current_work_item matched only project.json itself, which is why the contradiction survived every gate in the repository.",
+      "notes": "The overclaim is the finding. `g0_verified: true` is the one field in the repository that would let a reader conclude a human attestation exists when none does, and it sits in the first file anyone opens. Replacing it with `g0_mechanical_checks_verified` plus an explicit `g0_gate_verdict` of PENDING_HUMAN_ATTESTATION, a source naming the report and commit it was read from, and a caveat stating the gate is not passed is the smallest change that makes the field mean what it can honestly mean.\n\ncurrent_state was not simply wrong but structurally unable to be right: it carried no as_of, so any update to it would immediately become a stale present-tense claim. It now carries as_of_commit and as_of, and the file counts are reproducible with the git ls-files invocation recorded in EV-090 rather than asserted. SQL migrations are counted separately and explicitly excluded from executable_code_at_head, because 'executable code' should not silently include DDL.\n\ndetected_toolchain still records go1.26.2 windows/amd64 and was deliberately left alone. It carries observed_at 2026-09-28 and is a dated observation rather than a live claim, so rewriting it would falsify the record rather than correct it. The same reasoning applies to the scale rationale's baseline statement, except that one used the present tense - 'Repo currently contains ZERO executable code' - and so could be read as a claim about today. It is now dated to baseline_commit rather than deleted, because it is the stated basis for the XXL rating and the rating must keep its justification.",
+      "dependencies": [
+        "WI-188"
+      ],
+      "evidence_ref": [
+        "EV-090"
+      ]
     }
   ]
 }
