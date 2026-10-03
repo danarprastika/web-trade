@@ -57,6 +57,41 @@ PYTHON_WORKSPACES = (
 
 LOCKFILES = ("apps/web/package-lock.json",)
 
+# The workflow's own env block, which repeats the pins. The repetition is unavoidable - a workflow
+# expression cannot read a file - but a duplicated value with no comparison between the two copies
+# is a value that can drift silently.
+#
+# This check is the reason the repetition is safe, and it did not exist before it: ci.yml carried a
+# comment asserting "the `toolchain` job asserts the two agree", and no such assertion existed. That
+# mattered for GO_VERSION specifically, because env.GO_VERSION is what actions/setup-go installs -
+# a workflow left behind at an older pin would have built every job on a different toolchain than
+# the one the modules declare, while this gate reported every one of its checks as passing.
+WORKFLOW = ".github/workflows/ci.yml"
+
+# Pins the workflow's env block must mirror, and how. "exact" compares the whole string; "series"
+# compares major.minor only, because the workflow deliberately pins a series where versions.env pins
+# a full patch. Nothing may be left out of this list without either a reason that survives review or
+# a different check elsewhere - a pin nobody checks is the defect this function exists to prevent.
+#
+# PYTHON_VERSION is compared as a series, and that is a real constraint rather than a convenient
+# exemption: env.PYTHON_VERSION is what actions/setup-python installs in six places, and
+# verify_python_drift reads only the two pyproject.toml files, so before this was added nothing at
+# all constrained the workflow's interpreter.
+WORKFLOW_ENV_KEYS: tuple[tuple[str, str], ...] = (
+    ("GO_VERSION", "exact"),
+    ("NODE_VERSION", "exact"),
+    ("PYTHON_VERSION", "series"),
+)
+
+# The Postgres image the integration job actually runs is a literal under `services.postgres.image`,
+# not an env reference: GitHub's context-availability table allows github, needs, strategy, matrix,
+# vars and inputs at `jobs.<job_id>.services` and NOT env, so `${{ env.POSTGRES_IMAGE }}` there would
+# not resolve and the workflow would be rejected. An earlier version of this change set instead
+# compared the (then unused) env.POSTGRES_IMAGE against versions.env and left the literal that
+# actually runs completely unchecked - a gate reporting success without having examined the thing it
+# named. So the value is read from where it is used, and checked there.
+WORKFLOW_SERVICE_IMAGES = (("postgres", "POSTGRES_IMAGE"),)
+
 
 @dataclass
 class Report:
@@ -368,6 +403,170 @@ def verify_go_pins(path: Path, rel: str, report: Report) -> None:
             )
 
 
+def verify_workflow_env(repo_root: Path, pinned: dict[str, str], report: Report) -> None:
+    """The workflow's pins must agree with versions.env.
+
+    The duplication in a workflow file cannot be removed - a workflow expression cannot read a file
+    from disk - so the only thing that can keep it honest is a comparison between the two copies.
+    Without this check a workflow left behind at an older pin is invisible: every go.mod still
+    matches versions.env, so the drift gate reports success while the jobs install a different
+    toolchain than the one the modules were verified against.
+
+    Two shapes of pin are checked, because the workflow expresses them two ways:
+
+      * the top-level `env:` block, which actions/setup-go and actions/setup-python read through
+        `${{ env.X }}` (WORKFLOW_ENV_KEYS);
+      * literal values written straight into the YAML - the integration job's Postgres image -
+        which no expression can reach (WORKFLOW_SERVICE_IMAGES).
+
+    The workflow is parsed with a regex rather than a YAML parser on purpose. This script runs as
+    the FIRST step of the toolchain job, before anything installs PyYAML, and a check that cannot
+    start is a check that never runs. The pattern is anchored at column 0 for `env:` and requires
+    exactly one such block, and a workflow that no longer matches FAILS rather than skipping -
+    a gate that quietly stops finding its input is the EV-064 shape of a check reporting success
+    without having examined anything.
+    """
+    path = repo_root / WORKFLOW
+    if not path.is_file():
+        report.check(False, f"{WORKFLOW}: missing; the workflow pins would go unchecked")
+        return
+
+    text = path.read_text(encoding="utf-8")
+    env_pairs: dict[str, str] = {}
+    anchors = 0
+    lines = text.splitlines()
+
+    for index, line in enumerate(lines):
+        if line.rstrip() != "env:":
+            continue
+        anchors += 1
+        for follower in lines[index + 1 :]:
+            stripped = follower.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if not follower.startswith("  ") or follower.startswith("   "):
+                # Dedented or over-indented: the block is over. `jobs:` lands here.
+                break
+            match = re.match(r"^ {2}([A-Za-z_][A-Za-z0-9_]*):\s*(.*?)\s*$", follower)
+            if match:
+                value = match.group(2)
+                if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+                    value = value[1:-1]
+                env_pairs[match.group(1)] = value
+
+    if anchors != 1:
+        report.check(
+            False,
+            f"{WORKFLOW}: expected exactly one top-level `env:` block, found {anchors}; the "
+            "workflow pins cannot be compared and this check is not examining anything",
+        )
+        return
+
+    for key, mode in WORKFLOW_ENV_KEYS:
+        want = pinned.get(key)
+        if want is None:
+            continue
+        got = env_pairs.get(key)
+        if got is None:
+            report.check(
+                False,
+                f"{WORKFLOW}: env.{key} is absent but toolchain/versions.env pins it to {want!r}; "
+                "the step that installs this toolchain would have nothing to install",
+            )
+            continue
+        if mode == "exact":
+            agree = got == want
+            detail = f"env.{key} is {got!r} but toolchain/versions.env pins {key}={want!r}"
+        elif mode == "series":
+            want_series = ".".join(want.split(".")[:2])
+            got_series = ".".join(got.split(".")[:2])
+            agree = got_series == want_series
+            detail = (
+                f"env.{key} is the series {got_series!r} but toolchain/versions.env pins "
+                f"{key}={want!r}, i.e. the series {want_series!r}"
+            )
+        else:  # pragma: no cover - a typo in WORKFLOW_ENV_KEYS must not pass silently
+            report.check(False, f"{WORKFLOW}: internal error, unknown comparison mode {mode!r} for {key}")
+            continue
+        report.check(
+            agree,
+            f"{WORKFLOW}: {detail}; CI would install a different {key} than the one the "
+            "repository declares",
+        )
+
+    _verify_workflow_service_images(lines, pinned, report)
+
+
+def _verify_workflow_service_images(
+    lines: list[str], pinned: dict[str, str], report: Report
+) -> None:
+    """Literal images the jobs run must match the pin, wherever the pin had to be written down.
+
+    Some pins cannot be indirected through `env` - GitHub does not expose that context at
+    `jobs.<job_id>.services` - so the workflow repeats them as literals. A literal is exactly the
+    thing that rots unnoticed, because nothing in the repository mentions it: the pin is in
+    versions.env, the value CI runs is in ci.yml, and no check compares them.
+
+    Each value found is required to equal the pin exactly. A `${{ ... }}` expression is refused
+    with its own message rather than folded into the inequality, because an expression GitHub will
+    not resolve at this key is a workflow that does not run, and "GitHub would not resolve it" is
+    not something an operator will learn from "expected postgres:17.11-alpine, got ${{ env.X }}".
+    """
+    for service_id, key in WORKFLOW_SERVICE_IMAGES:
+        want = pinned.get(key)
+        if want is None:
+            continue
+
+        # A service block is `<indent><service_id>:` followed by lines indented further, one of
+        # which is `image: <value>`. Requiring a deeper indent for the body is what stops this from
+        # matching a same-named key elsewhere in the document.
+        images: list[str] = []
+        for index, line in enumerate(lines):
+            head = re.match(r"^( +)" + re.escape(service_id) + r":[ \t]*$", line)
+            if not head:
+                continue
+            indent = len(head.group(1))
+            for follower in lines[index + 1 :]:
+                if not follower.strip() or follower.strip().startswith("#"):
+                    continue
+                body_indent = len(follower) - len(follower.lstrip(" "))
+                if body_indent <= indent:
+                    break  # dedented out of the service body
+                image = re.match(r"^image:[ \t]*(.*?)[ \t]*$", follower.strip())
+                if image and body_indent == indent + 2:
+                    value = image.group(1)
+                    if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+                        value = value[1:-1]
+                    images.append(value)
+
+        if not images:
+            report.check(
+                False,
+                f"{WORKFLOW}: no `image:` found for the {service_id!r} service; "
+                f"toolchain/versions.env pins {key}={want!r} and this check is not examining it",
+            )
+            continue
+
+        # Every declaration of the service must agree, not just one of them: two jobs can both
+        # declare postgres, and only comparing the first would let the second drift.
+        for got in images:
+            if "${{" in got:
+                report.check(
+                    False,
+                    f"{WORKFLOW}: services.{service_id}.image is the expression {got!r}. GitHub "
+                    "does not expose the env context at jobs.<job_id>.services, so an expression "
+                    "here does not resolve and the workflow would be rejected; write the pinned "
+                    f"literal {want!r} instead so this check can read it",
+                )
+                continue
+            report.check(
+                got == want,
+                f"{WORKFLOW}: services.{service_id}.image is {got!r} but toolchain/versions.env "
+                f"pins {key}={want!r}; CI would run a different database than the repository "
+                "declares",
+            )
+
+
 def verify_lockfiles(repo_root: Path, report: Report) -> None:
     """A lockfile must exist for every ecosystem that has a lockfile format.
 
@@ -409,6 +608,7 @@ def main(argv: list[str] | None = None) -> int:
         verify_go_drift(repo_root, pinned, report)
         verify_node_drift(repo_root, pinned, report)
         verify_python_drift(repo_root, pinned, report)
+        verify_workflow_env(repo_root, pinned, report)
 
     package_json = repo_root / "apps" / "web" / "package.json"
     if package_json.is_file():

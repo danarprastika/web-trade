@@ -66,6 +66,12 @@ VULN_EXIT = 3
 # produced. Kept distinct from VULN_EXIT because conflating them would hide the original defect.
 TOOL_ERROR_EXIT = 1
 
+# Things a scenario observed that must reach the reader but are not failures of the step under
+# test. Collected at module scope so a scenario can raise one without threading a return value
+# through main(), and printed under a [WARN] marker rather than [ok]: a warning that looks like a
+# pass is the confusion this repository has recorded three times.
+WARNINGS: list[str] = []
+
 
 @dataclass
 class Outcome:
@@ -306,10 +312,12 @@ def scenario_finding_blocks(scan: str) -> Outcome:
 def scenario_no_fail_fast(scan: str) -> Outcome:
     """A finding in the FIRST module must not stop the scan.
 
-    This is the property that makes the step useful rather than merely correct. govulncheck exits 3
-    on a finding, so a step written with `set -e` fails at the first bad module and an operator
-    fixes them one CI run at a time. The step deliberately drops `-e` and aggregates; this asserts
-    the aggregation reaches every module even when the first one has already failed.
+    This is the property that makes the step useful rather than merely correct, and it comes from
+    the aggregation rather than from the absence of errexit. The `|| rc=$?` branch already
+    suppresses errexit for the scanner, so restoring `set -e` would change nothing here - which the
+    comment in the workflow says, because an earlier version of it claimed the opposite. What the
+    aggregation buys is that a failure is recorded and the loop continues, so an operator sees
+    every affected module in one run instead of fixing them one CI run at a time.
     """
     bin_dir, repo = _build_sandbox(with_go=False, finding_module=MODULES[0])
     result = _run_bash(scan, repo, bin_dir)
@@ -372,23 +380,83 @@ def scenario_tool_error_fails(scan: str) -> Outcome:
     )
 
 
-def scenario_empty_list_is_unguarded_by_the_scan_step(scan: str) -> Outcome:
-    """Deliberately NOT a pass/fail property: it records what the scan step does with no modules.
+def scenario_missing_module_list_fails(scan: str) -> Outcome:
+    """No modules.txt at all must fail the step.
 
-    The scan step iterates modules.txt and carries no guard of its own, so an empty list exits 0
-    having scanned nothing. That is why the RESOLVE step carries the empty-list refusal, and why
-    this scenario is reported rather than asserted: if that refusal is ever deleted, this is the
-    shape the combined gate degrades into, and it is worth seeing printed on every run.
+    This is the hole review found in the step as first written, and it is worth keeping a
+    dedicated scenario for rather than folding into the empty-list case. `done < modules.txt` with
+    no such file fails its redirect; with errexit not yet present the loop body simply never ran,
+    `status` stayed 0, and the step exited 0 having scanned nothing. That is the exact defect class
+    this script exists to eliminate, reintroduced one layer up, and it was unreachable only
+    because the resolve step happened to run first in the same directory - the same invisibility as
+    the original bug with one step removed.
+    """
+    bin_dir, repo = _build_sandbox(with_go=False)
+    (repo / "modules.txt").unlink()
+    result = _run_bash(scan, repo, bin_dir)
+    calls = _scan_log(repo)
+    text = _out(result)
+
+    if result.returncode == 0:
+        return Outcome(
+            "a missing module list fails the step",
+            False,
+            f"modules.txt does not exist and the step still exited 0 after {len(calls)} "
+            "invocations: a vulnerability gate reported success having scanned nothing",
+        )
+    if "refusing to report a clean scan" not in text:
+        return Outcome(
+            "a missing module list fails the step",
+            False,
+            f"the step failed but did not say it was refusing to scan nothing:\n{text[-1500:]}",
+        )
+    return Outcome(
+        "a missing module list fails the step",
+        True,
+        f"exit {result.returncode}, {len(calls)} invocations",
+    )
+
+
+def scenario_empty_module_list_fails(scan: str) -> Outcome:
+    """An EMPTY module list must fail the step, and this asserts it rather than reporting it.
+
+    This scenario used to be the opposite: it asserted nothing, and its docstring claimed the scan
+    step had no empty-list guard of its own. That stopped being true when the `[ ! -s modules.txt ]`
+    guard was added, and a stale claim in a comment is not a smaller problem than the one it
+    describes - it told a reader that the empty case was uncovered when the coverage was the whole
+    point of the line above it.
+
+    It is asserted now, and it is a distinct property from the missing-file case for a specific
+    reason: `! -s` refuses an empty file as well as a missing one, but `! -e` would accept a
+    zero-byte file. A guard weakened from `-s` to `-e` still catches a missing modules.txt, so the
+    scenario above would keep passing, and the empty case - go.work resolving to zero modules, which
+    is the same pass-over-nothing - would go back to exiting 0 with nothing asserting it. Only a
+    scenario that seeds an empty file can tell those two apart.
     """
     bin_dir, repo = _build_sandbox(with_go=False)
     _seed(repo, ())
     result = _run_bash(scan, repo, bin_dir)
     calls = _scan_log(repo)
+    text = _out(result)
+
+    if result.returncode == 0:
+        return Outcome(
+            "an empty module list fails the step",
+            False,
+            f"modules.txt is zero bytes and the step still exited 0 after {len(calls)} "
+            "invocations: a vulnerability gate reported success having scanned nothing. This is "
+            "what the guard degrades to if `[ ! -s ]` becomes `[ ! -e ]`",
+        )
+    if "refusing to report a clean scan" not in text:
+        return Outcome(
+            "an empty module list fails the step",
+            False,
+            f"the step failed but did not say it was refusing to scan nothing:\n{text[-1500:]}",
+        )
     return Outcome(
-        "scan step over an empty module list (reported, not asserted)",
+        "an empty module list fails the step",
         True,
-        f"exit {result.returncode}, {len(calls)} invocations - the resolve step's refusal is what "
-        "keeps this from being a pass over nothing",
+        f"exit {result.returncode}, {len(calls)} invocations",
     )
 
 
@@ -502,13 +570,39 @@ def scenario_real_scanner(repo_tool: str) -> Outcome:
         capture_output=True,
         cwd=ROOT,
     )
+    inside_text = inside.stdout.decode("utf-8", "replace") + inside.stderr.decode("utf-8", "replace")
+    if inside.returncode == VULN_EXIT:
+        # govulncheck's exit code for a reachable vulnerability. Failing this scenario on it would
+        # be the wrong verdict: the property under test is that the scanner RUNS, and a finding is
+        # proof that it did, not evidence of a broken harness. The scan step above is what blocks
+        # on a finding, and it has already run by the time this scenario executes.
+        #
+        # What is not acceptable is reporting it as a plain green line. The first version of this
+        # branch did exactly that - `[ok] ... reported a reachable vulnerability` with the
+        # scanner's own output discarded - which makes a security finding look like a passing
+        # checkmark. That is the confusion this repository has now recorded three times (EV-064,
+        # EV-065, WI-175): a green marker on a line whose text says something went wrong. So the
+        # property still passes, the finding is raised as a WARN with the scanner's text quoted,
+        # and nothing about it is dropped.
+        WARNINGS.append(
+            "govulncheck reports a REACHABLE VULNERABILITY in services/control-plane at this "
+            "commit (exit 3). The property below only asserts that the scanner runs, so it still "
+            f"passes, but the finding itself is not swallowed:\n{inside_text[-1500:].strip()}"
+        )
+        return Outcome(
+            "real govulncheck refuses the repository root",
+            True,
+            "root invocation refused with 'no go.mod file'; per-module invocation ran and reported "
+            "a reachable vulnerability (exit 3) - see the WARN above, and note the scan step itself "
+            "blocks on this",
+        )
     if inside.returncode != 0:
         return Outcome(
             "real govulncheck refuses the repository root",
             False,
-            "the root invocation is refused as expected, but the per-module invocation failed, so "
-            "the scan this gate replaced could not run either:\n"
-            + (inside.stdout.decode("utf-8", "replace") + inside.stderr.decode("utf-8", "replace"))[-1500:],
+            "the root invocation is refused as expected, but the per-module invocation failed in a "
+            "way that is not a reported finding, so the scan this gate replaced could not run "
+            f"either (exit {inside.returncode}):\n{inside_text[-1500:]}",
         )
     return Outcome(
         "real govulncheck refuses the repository root",
@@ -549,7 +643,8 @@ def main() -> int:
         scenario_finding_blocks(scan),
         scenario_no_fail_fast(scan),
         scenario_tool_error_fails(scan),
-        scenario_empty_list_is_unguarded_by_the_scan_step(scan),
+        scenario_missing_module_list_fails(scan),
+        scenario_empty_module_list_fails(scan),
     ]
 
     if has_jq:
@@ -568,6 +663,12 @@ def main() -> int:
 
     failures = 0
     print()
+    # Warnings are printed under their own marker, never under [ok]. A green line whose text says a
+    # reachable vulnerability was found is exactly the confusion this repository has recorded three
+    # times - EV-064, EV-065 and WI-175 - and this script is the one built to catch it, so the
+    # reporting shape is held to the same standard as the behaviour it reports on.
+    for warning in WARNINGS:
+        print(f"  [WARN] {warning}")
     for outcome in outcomes:
         if outcome.passed:
             print(f"  [ok]   {outcome.name}: {outcome.detail}")

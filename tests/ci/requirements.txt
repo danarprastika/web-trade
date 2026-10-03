@@ -10,9 +10,11 @@
 #
 # PyYAML is required by tests/ci/test_ci_workflow.py, which reaches it through
 # pytest.importorskip. That is a trap: with PyYAML absent the module SKIPS rather than
-# fails, so the 28 workflow-integrity tests and the bash-syntax gate quietly stop running
+# fails, so the workflow-integrity tests and the bash-syntax gate quietly stop running
 # while CI still reports success. Pinning it here, and installing it in the toolchain job,
-# is what turns those 28 tests back into a real control.
+# is what turns those tests back into a real control. The count is deliberately not written
+# down: it changes every time a test is added, and a stale count in a comment is a claim
+# nobody checks.
 
 pytest==9.0.1
 PyYAML==6.0.3

@@ -391,6 +391,25 @@ def test_the_go_vulnerability_scan_runs_inside_a_module_and_can_fail(workflow: d
         "having scanned no code"
     )
 
+    # So is a scan whose module list is absent. `done < modules.txt` fails its redirect when the
+    # file is missing, and without errexit the loop body simply never runs: status stays 0 and the
+    # step exits 0 having scanned nothing. This is the original defect class reintroduced one step
+    # removed, and it is only unreachable while the resolve step happens to run first in the same
+    # directory - the same invisibility as the original bug.
+    assert re.search(r'\[ ! -s modules\.txt \]', runs), (
+        "the scan must refuse a missing or empty modules.txt before iterating it; `done < modules.txt` "
+        "fails its redirect silently under a step without errexit, so the step exits 0 having scanned "
+        "nothing"
+    )
+    assert "refusing to report a clean scan" in runs, (
+        "that refusal must say what it is refusing, so an operator reading the log is not left to "
+        "work out whether an empty result meant no code or no modules"
+    )
+    assert re.search(r"set -euo pipefail", runs), (
+        "the step needs errexit for everything that is not the scanner itself; otherwise a typo in "
+        "any other line of the block fails silently and the step reports success"
+    )
+
     # Aggregating failures so every module is scanned must not discard the failure.
     assert re.search(r'govulncheck[^\n]*\|\|', runs), (
         "the step must tolerate a failing module so the remaining modules are still scanned, and "
