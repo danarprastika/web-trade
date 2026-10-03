@@ -236,28 +236,82 @@ func TestTwoConcurrentRunsSerialiseOnTheAdvisoryLock(t *testing.T) {
 
 	// The second run must not come back while the first still holds the lock. If it does, it
 	// read the applied set before the first committed and is about to plan the same step.
-	select {
-	case got := <-secondDone:
-		t.Fatalf("the second run returned while the first still held the lock: err=%v applied=%v",
-			got.err, got.result.Applied)
-	case err := <-firstDone:
-		if err != nil {
-			t.Fatalf("the first run failed: %v", err)
+	//
+	// This used to be a bare `select` over both channels, and that was wrong for a reason worth
+	// recording: when both runners are ready at once - which is what happens when the first
+	// finishes while the test sits between selects - Go picks between the two channels at
+	// random. Choosing `secondDone` there proves nothing about the lock, because both runs are
+	// simply done, yet the message read it as proof of a concurrent run. "While the first still
+	// held the lock" only means something if the first really is still running, so that is now
+	// checked directly instead of inferred from which channel the select happened to choose.
+	//
+	// That change is correct but it was not the cause. WI-176 was an unscoped pg_locks query in
+	// waitForAdvisoryLock; see advisoryLocksInThisDatabase for the actual defect. What this test
+	// gained along the way is diagnosability: every failure below reports elapsed time, whether
+	// the first runner finished, and how many sessions hold the lock in this database. The
+	// root cause above was found in one run because of those fields - two hours of guessing at
+	// a one-line message had not found it.
+	started := time.Now()
+	elapsed := func() string { return time.Since(started).Round(time.Millisecond).String() }
+
+	// lockHolders counts sessions holding an advisory lock *in this database*, so a failure can
+	// distinguish "the lock was never taken" from "the lock was taken and ignored". It uses the
+	// same scoped query as waitForAdvisoryLock: an unscoped count would report other tests' locks
+	// and make this diagnostic actively misleading.
+	lockHolders := func() string {
+		var n int
+		dctx, dcancel := context.WithTimeout(ctx, 5*time.Second)
+		defer dcancel()
+		if err := db.QueryRowContext(dctx, advisoryLocksInThisDatabase).Scan(&n); err != nil {
+			return "unknown (" + err.Error() + ")"
 		}
+		return fmt.Sprintf("%d", n)
 	}
 
 	var got outcome
+	secondReturned := false
+	firstFinished := false
+	var firstErr error
 	select {
 	case got = <-secondDone:
-	case <-time.After(30 * time.Second):
-		t.Fatal("the second run never acquired the lock after the first released it")
+		secondReturned = true
+		select {
+		case firstErr = <-firstDone:
+			firstFinished = true
+			if firstErr != nil {
+				t.Fatalf("the first run failed after %s with %s advisory lock holder(s): %v",
+					elapsed(), lockHolders(), firstErr)
+			}
+		default:
+			t.Fatalf("the second run returned while the first still held the lock, after %s "+
+				"with %s advisory lock holder(s): second err=%v second applied=%v first finished=%t",
+				elapsed(), lockHolders(), got.err, got.result.Applied, firstFinished)
+		}
+	case firstErr = <-firstDone:
+		firstFinished = true
+		if firstErr != nil {
+			t.Fatalf("the first run failed after %s with %s advisory lock holder(s): %v",
+				elapsed(), lockHolders(), firstErr)
+		}
+	}
+
+	if !secondReturned {
+		select {
+		case got = <-secondDone:
+		case <-time.After(30 * time.Second):
+			t.Fatalf("the second run never acquired the lock after %s; %s advisory lock "+
+				"holder(s) remain and the first finished with err=%v",
+				elapsed(), lockHolders(), firstErr)
+		}
 	}
 	if got.err != nil {
-		t.Fatalf("the second run failed instead of waiting for the lock: %v", got.err)
+		t.Fatalf("the second run failed instead of waiting for the lock, after %s with %s "+
+			"advisory lock holder(s): %v", elapsed(), lockHolders(), got.err)
 	}
 	if len(got.result.Applied) != 0 {
-		t.Fatalf("the second run applied %v; it should have observed the completed set "+
-			"and planned nothing", got.result.Applied)
+		t.Fatalf("the second run applied %v after %s with %s advisory lock holder(s); it should "+
+			"have observed the completed set and planned nothing",
+			got.result.Applied, elapsed(), lockHolders())
 	}
 
 	var rows int
@@ -279,8 +333,7 @@ func waitForAdvisoryLock(t *testing.T, db *sql.DB) {
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		var held int
-		if err := db.QueryRowContext(ctx,
-			`SELECT count(*) FROM pg_locks WHERE locktype = 'advisory'`).Scan(&held); err != nil {
+		if err := db.QueryRowContext(ctx, advisoryLocksInThisDatabase).Scan(&held); err != nil {
 			t.Fatalf("reading pg_locks: %v", err)
 		}
 		if held > 0 {
@@ -290,6 +343,28 @@ func waitForAdvisoryLock(t *testing.T, db *sql.DB) {
 	}
 	t.Fatal("the first run never took the advisory lock, so nothing was actually serialised")
 }
+
+// advisoryLocksInThisDatabase counts session-level advisory locks held in the *current*
+// database, which is the only scope in which "this test's first runner holds the lock" can be
+// concluded from a lock count.
+//
+// This is scoped to the database and that scoping is load-bearing, not tidiness. `pg_locks` is
+// cluster-wide, and every test in this package locks on the same key against one shared
+// PostgreSQL instance. An unscoped count is therefore satisfied by *any other concurrently
+// running test's* lock, so the wait returned before this test's first runner had locked
+// anything. The second runner then started unblocked, won the race for the real lock, and
+// applied the migration itself - which is exactly what the assertions caught:
+//
+//	the second run returned while the first still held the lock, after 3.099s with
+//	2 advisory lock holder(s): second err=<nil> second applied=[0001_hand.sql] first finished=false
+//
+// The old comment here claimed that "any advisory lock in a freshly created disposable database
+// belongs to the test", which is true of the *database* and false of the *cluster*. The two were
+// confused, and the confusion only showed up when other packages were testing at the same time.
+const advisoryLocksInThisDatabase = `
+SELECT count(*) FROM pg_locks
+WHERE locktype = 'advisory'
+  AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`
 
 // A run that fails releases the lock. If it did not, the next run would block on it until its
 // own timeout and report a lock wait rather than a migration error, and every run after that

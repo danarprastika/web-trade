@@ -36,6 +36,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/danarprastika/web-trade/services/control-plane/migrate"
@@ -116,6 +117,60 @@ func run() int {
 	if databaseURL == "" {
 		fmt.Fprintln(os.Stderr, "DATABASE_URL is not set; refusing to guess a database")
 		return 2
+	}
+
+	// The guard runs before a connection is opened, so a refused target is never contacted at
+	// all. That ordering is the point: a guard that has to connect in order to decide whether it
+	// may destroy has already acted on the database it was protecting.
+	//
+	// It applies to `down` in every form, bounded or not. `up` and `status` are how a first
+	// contact with a database is made, and guarding them would make it impossible to prepare a
+	// database or inspect one without an opt-in.
+	//
+	// Bounding the revert does not make it safe, and an earlier version of this comment claimed
+	// the opposite. `migrate.DownTo` reverts the applied migrations *above* the bound, newest
+	// first, so `-to 1` on the real set plans versions 4, 3 and 2 - and version 2 is
+	// 0002_audit.sql, whose down body is `DROP TABLE IF EXISTS audit_records CASCADE` followed by
+	// the rest of the audit schema. A bound on an unbounded down reverts the entire applied set
+	// and the same 0002 body runs. Both forms destroy the tamper-evident chain that the
+	// compliance story rests on, against whatever DATABASE_URL is exported, with no opt-in and no
+	// confirmation. The bound decides how much is reverted; it does not decide whether the
+	// destructive body runs, so it cannot be the thing that decides whether the guard applies.
+	//
+	// The command cannot tell which down bodies are destructive from the outside - the migration
+	// files carry no such metadata - so it cannot narrow the guard to the versions that matter
+	// without inventing a list that would silently rot as migrations are added. Guarding every
+	// down is the honest rule: a down against a database nobody has called disposable requires
+	// the opt-in, and an operator rolling back one bad migration has a bounded amount to lose and
+	// can name the database on purpose.
+	if parsed == migrate.Down {
+		policy := migrate.CommandOptInPolicy()
+		verdict := migrate.EvaluateDestructiveTarget(
+			databaseURL, policy, os.Getenv(policy.OptInEnv))
+		if !verdict.Allowed {
+			fmt.Fprintln(os.Stderr, verdict.RefusalMessage(
+				"go run ./services/control-plane/cmd/migrate -direction down"))
+			// Exit 2, not 1: nothing was attempted and the database is untouched, so this is a
+			// way the command cannot run rather than a run that failed. A caller can tell the
+			// difference and will not go looking for a migration to fix.
+			return 2
+		}
+		if verdict.Overridden {
+			// Unreachable under the command policy, which does not allow an override at all.
+			// Kept as a hard failure rather than a log line, because a policy that has been
+			// loosened to make this reachable must not fail quietly at the moment it matters.
+			fmt.Fprintln(os.Stderr, "refusing to run: this build's policy allowed a destructive "+
+				"migration through an explicit override, which cmd/migrate must never do. "+
+				"The command is not the build that was reviewed; do not run it against any database")
+			return 2
+		}
+		scope := "every applied migration"
+		if givenTo {
+			scope = "every applied migration above version " + strconv.Itoa(*to)
+		}
+		fmt.Fprintf(os.Stderr, "destructive migration permitted against %s: this reverts %s, "+
+			"and %s=%s must be set to exactly %q to allow it\n",
+			verdict.Target, scope, policy.OptInEnv, policy.OptInValue, policy.OptInValue)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)

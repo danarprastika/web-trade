@@ -249,6 +249,75 @@ def test_dependency_scan_and_integration_use_module_scoped_patterns(workflow: di
         )
 
 
+def test_integration_job_fails_if_the_live_migration_tests_skipped(workflow: dict) -> None:
+    """WI-175. A skip in a live-database package means those tests verified nothing.
+
+    `disposableDSN` and its equivalents skip when DATABASE_URL is absent, and `go test` prints
+    "ok" either way. Those tests carry no build tag, so they compile into the `go` job too -
+    which has no database and reported a clean package result having executed none of them. The
+    `go` job genuinely has no database, so skipping there is correct; what is not acceptable is
+    that the one job which does have a database proves nothing about it.
+
+    The integration job already asserts DATABASE_URL is set and reachable, so a skip there
+    cannot mean "no database configured" - it can only mean the enforcement itself is broken.
+    Asserted here because a CI step that nothing verifies is the same class of defect as the
+    skip it was added to catch.
+    """
+    job = (workflow.get("jobs") or {}).get("integration") or {}
+    steps = job.get("steps") or []
+    script = "\n".join(str(s.get("run", "")) for s in steps)
+
+    # All three packages that skip without a database, not just the one the defect was filed
+    # against. WI-175's fourth criterion asks for the same reporting everywhere it applies, and
+    # a check that covered only cmd/migrate would leave migrate and integration able to skip
+    # silently in exactly the same way.
+    for package in (
+        "./services/control-plane/cmd/migrate/...",
+        "./services/control-plane/migrate/...",
+        "./services/control-plane/integration/...",
+    ):
+        assert package in script, f"the skip check does not cover {package}"
+
+    assert "grep -q '^--- SKIP'" in script, (
+        "the integration job must fail when a live test skips; without a skip check this step "
+        "is the very failure mode it was written to prevent"
+    )
+    # `-v` is not optional: without it `go test` does not print the `--- SKIP` lines this
+    # check greps for, so the step would pass having detected nothing.
+    assert re.search(r"go test[^\n]*-v", script), (
+        "the skip check needs `go test -v`; without -v there are no `--- SKIP` lines to find"
+    )
+    # And the refusal must be a failure, not a warning.
+    assert re.search(r"grep -q '\^--- SKIP'; then(?:.|\n)*?exit 1", script), (
+        "a detected skip must exit non-zero; an annotation alone would not fail the job"
+    )
+
+
+def test_every_skip_in_the_live_database_packages_is_a_database_skip() -> None:
+    """The CI step fails on *any* skip, which is only sound if every skip there is a DB skip.
+
+    If a package in that list ever grows a legitimate skip - an unsupported platform, a
+    timing-dependent case - the job would start failing for a reason unrelated to the
+    invariant it exists to protect, and the fix would be to weaken the check. So the premise
+    is asserted rather than trusted, and adding a real skip means writing down why it is
+    allowed here.
+    """
+    repo = REPO_ROOT
+    for package in ("cmd/migrate", "migrate", "integration"):
+        for test_file in (repo / "services" / "control-plane" / package).glob("*_test.go"):
+            source = test_file.read_text(encoding="utf-8-sig")
+            for number, line in enumerate(source.splitlines(), start=1):
+                stripped = line.strip()
+                if not stripped.startswith("t.Skip"):
+                    continue
+                assert "DATABASE_URL" in stripped, (
+                    f"{test_file.relative_to(repo)}:{number} skips for a reason other than a "
+                    f"missing DATABASE_URL ({stripped!r}). The CI skip check fails on any skip "
+                    f"in this package, so this either needs an exemption written down there or "
+                    f"a narrower check"
+                )
+
+
 def test_pull_request_job_checkpoints_are_all_required_gates(workflow: dict) -> None:
     """docs/09 lists the every-merge gates; each must be a real job."""
     jobs = workflow.get("jobs") or {}

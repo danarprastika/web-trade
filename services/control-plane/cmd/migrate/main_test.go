@@ -44,6 +44,23 @@ type cliResult struct {
 	stderr string
 }
 
+// cliEnv is the environment every live test in this file passes to the CLI.
+//
+// The opt-in is included because the command's destructive guard needs it, and it is needed even
+// though these tests drive the command against a scratch database on this machine. The command
+// policy is the strict one on purpose - the opt-in is necessary and not sufficient - so a down
+// run needs both the disposable-looking name and the variable. Without this the four revert tests
+// below were refused at the guard before they reached a statement, which is the command behaving
+// correctly and the tests being wrong.
+//
+// It is applied uniformly, including to the `up` and `status` tests where the variable is inert.
+// Setting it there costs nothing and means no test in this file can silently start depending on
+// the guard's default; the tests that actually own the guard's behaviour are in
+// destructive_guard_test.go and deliberately run without it.
+func cliEnv(dsn string) []string {
+	return []string{"DATABASE_URL=" + dsn, "MIGRATE_ALLOW_DESTRUCTIVE=1"}
+}
+
 func runCLI(t *testing.T, env []string, args ...string) cliResult {
 	t.Helper()
 
@@ -118,7 +135,21 @@ func disposableDSN(t *testing.T) string {
 		t.Fatalf("DATABASE_URL=%q is set but not reachable: %v", base, err)
 	}
 
-	name := fmt.Sprintf("migrate_cli_%d_%x", os.Getpid(), time.Now().UnixNano())
+	// The `test_` prefix is not decoration. cmd/migrate's own destructive guard refuses any down
+	// whose target does not announce itself disposable on this machine, and these tests drive
+	// real down runs against this scratch database. A name like `migrate_cli_<pid>_<hex>` ends in
+	// a hex suffix, so it matches neither the suffix list nor the prefix rule and every one of
+	// these tests was refused at the guard before it reached a statement - which is the correct
+	// behaviour of the command and a broken test. An independent review of the corrected guard
+	// found it.
+	//
+	// The skip below is what hid that: these tests have no build tag, so they compile into the
+	// `go` job, which has no DATABASE_URL and skipped the six live tests calling disposableDSN
+	// while reporting a clean result. WI-175. The skip itself is still the right default for a
+	// developer with no database, and the `go` job genuinely has none; what changed is that the
+	// integration job - where DATABASE_URL is already proven set and reachable - now fails if
+	// any test here skips, so "no database configured" can never again be the explanation.
+	name := fmt.Sprintf("test_migrate_cli_%d_%x", os.Getpid(), time.Now().UnixNano())
 	if _, err := admin.ExecContext(ctx, "CREATE DATABASE "+name); err != nil {
 		t.Fatalf("creating the disposable database %s: %v", name, err)
 	}
@@ -236,7 +267,7 @@ func TestStatusIsReadOnlyAndSucceedsOnAnUninitialisedDatabase(t *testing.T) {
 // uninitialised catalog rather than a stub that always says nothing.
 func TestStatusReportsWhatIsApplied(t *testing.T) {
 	dsn := disposableDSN(t)
-	env := []string{"DATABASE_URL=" + dsn}
+	env := cliEnv(dsn)
 
 	if got := runCLI(t, env, "-direction", "up"); got.code != 0 {
 		t.Fatalf("up must exit 0, got %d\nstderr: %s", got.code, got.stderr)
@@ -255,7 +286,7 @@ func TestStatusReportsWhatIsApplied(t *testing.T) {
 // it applied, in the ledger and in the catalog.
 func TestABoundedRevertStopsAtTheTarget(t *testing.T) {
 	dsn := disposableDSN(t)
-	env := []string{"DATABASE_URL=" + dsn}
+	env := cliEnv(dsn)
 
 	if got := runCLI(t, env, "-direction", "up"); got.code != 0 {
 		t.Fatalf("up must exit 0, got %d\nstderr: %s", got.code, got.stderr)
@@ -295,7 +326,7 @@ func TestABoundedRevertStopsAtTheTarget(t *testing.T) {
 // existed, on a database of their own.
 func TestAnUnboundedRevertStillRevertsEverything(t *testing.T) {
 	dsn := disposableDSN(t)
-	env := []string{"DATABASE_URL=" + dsn}
+	env := cliEnv(dsn)
 
 	if got := runCLI(t, env, "-direction", "up"); got.code != 0 {
 		t.Fatalf("up must exit 0, got %d\nstderr: %s", got.code, got.stderr)
@@ -318,7 +349,7 @@ func TestAnUnboundedRevertStillRevertsEverything(t *testing.T) {
 // and changes nothing.
 func TestARevertToAVersionThatIsNotAppliedIsRefused(t *testing.T) {
 	dsn := disposableDSN(t)
-	env := []string{"DATABASE_URL=" + dsn}
+	env := cliEnv(dsn)
 
 	if got := runCLI(t, env, "-direction", "up"); got.code != 0 {
 		t.Fatalf("up must exit 0, got %d\nstderr: %s", got.code, got.stderr)
@@ -347,7 +378,7 @@ func TestARevertToAVersionThatIsNotAppliedIsRefused(t *testing.T) {
 // A target that names no migration is a typo, and it is refused by the same rule.
 func TestARevertToAnUnknownVersionIsRefused(t *testing.T) {
 	dsn := disposableDSN(t)
-	env := []string{"DATABASE_URL=" + dsn}
+	env := cliEnv(dsn)
 
 	if got := runCLI(t, env, "-direction", "up"); got.code != 0 {
 		t.Fatalf("up must exit 0, got %d\nstderr: %s", got.code, got.stderr)

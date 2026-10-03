@@ -971,6 +971,145 @@
       "dependencies": [
         "WI-165"
       ]
+    },
+    {
+      "id": "WI-171",
+      "phase": 2,
+      "title": "Destructive-target guard on the shipped cmd/migrate, not only the test harness",
+      "status": "COMPLETED",
+      "acceptance_criteria": [
+        "cmd/migrate refuses to run -direction down against a database it has not been told is disposable, evaluating the target with the same rules integration/harness_test.go already applies rather than a second and weaker copy",
+        "The down direction is covered specifically, since it is the direction that runs DROP TABLE ... CASCADE against whatever DATABASE_URL names",
+        "An explicit opt-in is required and is not sufficient on its own; neither requirement alone opens the door",
+        "The refusal names the host, port, database and user it refused, so an operator can tell which database was protected",
+        "The guard lives in the production command rather than only in a _test.go file, and the harness and the command share one implementation",
+        "Negative controls prove the refusal tests fail when the guard is removed, by a failing assertion rather than a broken build"
+      ],
+      "source": "Adversarial review of 62925b8 finding F6; services/control-plane/cmd/migrate/main.go; db/migrations/0002_audit.sql down migration; integration/harness_test.go",
+      "reproduction": "With DATABASE_URL pointing at any reachable PostgreSQL database other than the intended disposable one, `go run ./services/control-plane/cmd/migrate -direction down` with no -to reverts the entire applied set, which for 0002_audit.sql means DROP TABLE IF EXISTS audit_records CASCADE, DROP TABLE IF EXISTS audit_checkpoints CASCADE and the rest of the audit schema. No name check, no host check, no opt-in and no confirmation stand between the command and that schema. The guard hardened in 62925b8 exists only in integration/harness_test.go, which is a test file the shipped command never executes, so the production tool that actually drops schemas was never in that commit's scope. WI-117's own guard covers only the test harness.",
+      "notes": "Closed as planned: a move plus an exit code, not a rewrite. Three findings carried forward from the previous review were re-investigated and did not survive - F5's Go-side half is refuted by restore_test.go:283 and journal_test.go:118, which deliberately assert that a chain extending past its last checkpoint verifies, because Chain owns linkage and Anchor owns attestation; and F7 was already done. F5's schema residue was real and is WI-172, deferred by explicit human decision rather than folded into a destructive-command change.\n\nThe gate caught three defective mutations in my own work, the worst being a `&& false` that left `parsed == migrate.Down` visible to the source check written to detect its removal - a mutation that satisfied the very test aimed at it. Two source-position claims were consequently removed and the ordering property moved to a behavioural assertion, because a string index in a file proves where a name appears and not what executes first.\n\nEV-073 supersedes part of this item. An independent review of the completed change set found a critical defect in it: the bounded-revert exemption described above, which was a hole of the same shape as the one WI-171 was raised for. It was certified by the mutation gate as 'a bounded revert is guarded too' and enshrined by a test as 'a deliberate asymmetry rather than an oversight' - both green, both describing the defect. The root cause is that the safety argument rested on a sentence about DownTo that was never read; DownTo's own doc comment, three files away, says the plan is 'the applied migrations above version'. All four review findings are fixed and verified.\n\nEV-073 supersedes part of this item. An independent review of the completed change set found a critical defect in it: the bounded-revert exemption described above, which was a hole of the same shape as the one WI-171 was raised for. It was certified by the mutation gate as 'a bounded revert is guarded too' and enshrined by a test as 'a deliberate asymmetry rather than an oversight' - both green, both describing the defect. The root cause is that the safety argument rested on a sentence about DownTo that was never read; DownTo's own doc comment, three files away, says the plan is 'the applied migrations above version'. All four review findings are fixed and verified.",
+      "dependencies": [],
+      "priority": "high",
+      "write_scope": [
+        "services/control-plane/migrate",
+        "services/control-plane/cmd/migrate",
+        "services/control-plane/integration",
+        "scripts",
+        ".github/workflows"
+      ],
+      "evidence_ref": [
+        "EV-072",
+        "EV-073",
+        "EV-074"
+      ],
+      "completed_results": [
+        "The evaluator moved from integration/harness_test.go - a _test.go file that `go run ./cmd/migrate` never executes - into services/control-plane/migrate/destructive.go as exported API. CORRECTED BY EV-073: this first claimed the harness and the command 'cannot drift apart'. They could. The harness built its own DestructivePolicy literal instead of calling IntegrationOptInPolicy, so editing the constructor would have left the harness untouched while the test asserting on the constructor stayed green. The harness now delegates.",
+        "cmd/migrate/main.go evaluates the target before sql.Open and exits 2 on refusal, so a refused destruction names the database it protected without contacting it. The exit code is 2 rather than 0 because a refusal reporting success is worse than no guard for anything scripted around the command.",
+        "The guard applies to EVERY `down`, bounded or unbounded. CORRECTED BY EV-073: this first shipped exempting `-to`, on a comment claiming a bound 'does not take the ledger or the audit schema with it'. It does. DownTo reverts the migrations ABOVE the bound, so `-to 1` plans versions 4, 3, 2 and runs 0002_audit.sql's down body - DROP TABLE IF EXISTS audit_records CASCADE - unguarded. `up` and `status` remain exempt, which is what makes a database inspectable at all.",
+        "The guard applies to EVERY `down`, bounded or unbounded. CORRECTED BY EV-073: this first shipped exempting `-to`, on a comment claiming a bound 'does not take the ledger or the audit schema with it'. It does. DownTo reverts the migrations ABOVE the bound, so `-to 1` plans versions 4, 3, 2 and runs 0002_audit.sql's down body - DROP TABLE IF EXISTS audit_records CASCADE - unguarded. `up` and `status` remain exempt, which is what makes a database inspectable at all.",
+        "The opt-in is necessary but not sufficient. IntegrationOptInPolicy has OptInOverrides: true because the harness needs to be able to destroy its own disposable database; CommandOptInPolicy has it false, so on the shipped command both the target match and the exact opt-in are required. This is F8, and it was the defect the prose described but the code did not implement.",
+        "scripts/mutation_check_destructive_migrate.py certifies all nine properties, each noticed by a failing assertion rather than a broken build. It requires a mutation to compile before running any test under it, because it mutates source that other tests in the package also run. Gate result: PASS.",
+        "The gate's crash recovery was validated by a real occurrence: an earlier run was killed mid-mutation, left destructive.go permissive, and the next run reported the orphan marker and restored the file before testing anything.",
+        "F3 closed by TestAcceptingZeroRecordsNeitherUnhaltsNorDowngradesTheFinding, which pins that Accept(0) neither unhalts the guard nor downgrades a recorded finding, and that Clear afterwards still reads the escalated cause.",
+        "F7 confirmed already complete. The only remaining SEV-1_AUDIT_INTEGRITY literals are in tests, and guard.go:22-23 documents that they are constructed by hand so a typo in the constant cannot make a test pass vacuously.",
+        "CI runs the gate as its own step. The workflow bash gate parses 43 run blocks, PASS."
+      ]
+    },
+    {
+      "id": "WI-172",
+      "phase": 2,
+      "title": "The audit schema does not require total checkpoint coverage",
+      "status": "PENDING",
+      "priority": "medium",
+      "acceptance_criteria": [
+        "Every committed audit record is covered by a checkpoint, so no record can sit in the store with no signature attesting to it",
+        "The requirement is enforced by the database rather than only by the Go write path, since 0003_authz.sql:11 already identifies a second writer that does not go through the Go package as the threat this schema exists for",
+        "The enforcement does not break the legitimate write path: a deferred constraint trigger on audit_records AFTER INSERT must still admit the records-plus-checkpoint transaction SQLSink.Export commits",
+        "Verified against live PostgreSQL, not only by reading the migration",
+        "Negative controls prove a second writer inserting an uncovered record is refused, by a failing assertion rather than a broken build"
+      ],
+      "source": "Adversarial review finding F5, re-investigated during WI-171; db/migrations/0002_audit.sql:251-254; services/control-plane/audit/sink.go:221-227; db/migrations/0003_authz.sql:11",
+      "reproduction": "0002_audit.sql's audit_checkpoints_coverage trigger fires only on INSERT into audit_checkpoints, and validates checkpoint -> records: the count and boundary hashes of the range a checkpoint claims. Nothing requires the reverse. The only AFTER INSERT trigger on audit_records is audit_records_chain_link, which checks hash linkage alone. A second writer holding INSERT on audit_records can therefore commit a record that is correctly linked but covered by no checkpoint, and Verify - which also only checks checkpoint -> records, at verify.go:162-170 - reports the database clean. The record is present, internally consistent, and unattested, and nothing says so. Total coverage does hold in the shipped product, because SQLSink.Export is the only production write path and it inserts the records and their signed checkpoints in one transaction, but it holds only there.",
+      "notes": "Deferred by explicit human decision during WI-171 rather than fixed in place. A migration against the compliance-critical audit schema has real blast radius: every fixture that seeds records without checkpoints would need to change, and it belongs with the deferred schema and durability work rather than beside a destructive-command change.\n\nScope that this item must NOT take, established by reading the tests: Verify must not be made to require total coverage. restore_test.go:283 appends past the last checkpoint and requires OK, and journal_test.go:118 verifies records with nil checkpoints, because Chain owns linkage and Anchor owns attestation and Chain.Append has no signer. The earlier F5 finding, which proposed exactly that, would have inverted three deliberate tests and made a core API unusable. The 0003 architecture decision also warns against deferring the checkpoint to Export, since that reopens the unanchored-tail window restore.go:125-171 exists to refuse.\n\nThe honest limit of this finding: it is reasoning from the migration text, not an observation against live PostgreSQL, and its importance depends on a second writer existing at all.",
+      "dependencies": []
+    },
+    {
+      "id": "WI-173",
+      "phase": 2,
+      "title": "mutation_check_model deadlocks on M29 and leaves model/identity.go mutated",
+      "status": "COMPLETED",
+      "priority": "high",
+      "acceptance_criteria": [
+        "M29 either fails by an assertion within a bounded time, or the harness classifies a test-binary timeout as a detection with the evidence to distinguish it from an incidental hang",
+        "The mutated go test run is given an explicit -timeout, so a deadlock costs seconds rather than the 600s default that was observed",
+        "The gate restores identity.go even when the mutated run deadlocks or the process is killed, by writing an orphan marker and a backup before the first mutation and repairing from them on the next run",
+        "The gate exits PASS for M29 only on evidence that the lock matters, which the deadlock does establish, rather than reporting a skip",
+        "A negative control proves the recovery repairs identity.go when the gate is killed mid-mutation"
+      ],
+      "source": "Observed during the WI-171 verification sweep; scripts/mutation_check_model.py M29; services/control-plane/model/identity.go",
+      "reproduction": "M29 replaces `defer r.mu.Unlock()` with `_ = r.mu` in WorkloadRegistry.MintContext, so the mutex is acquired and never released and the next Lock() on that registry blocks forever. The observed consequence is that TestCompromiseResponseCoversAllFourRequiredActions hangs and the test binary panics at its timeout - confirmed directly by applying M29 by hand, running that test with -timeout 25s, and observing `panic: test timed out after 25s`, after which the file was restored byte-identically. The gate's classifier treats any outcome that is not a failing assertion as a skip, reports 'A skipped mutation means the rule was neither confirmed nor refuted', and exits 1. Separately and more seriously, the gate left identity.go mutated when it exited: the M29 edit was still present in the working tree afterwards, and it was that leftover which made the model's mutex protection disappear for the remainder of the session.",
+      "notes": "Closed by EV-075, and closed against every acceptance criterion rather than against the symptom.\n\nM29 now fails by an assertion inside a bounded time, as a detection: Go's own -timeout (240s) is set below the harness backstop (300s) so that Go reports the deadlock as a real failure with a goroutine dump. That ordering is the substance of the fix. My first attempt set the harness timeout to 300s and classified hangs as inconclusive, which reported a claim the suite can detect as undetectable - the backstop was winning the race against the component whose verdict it was overriding. A second defect in that same change: the inconclusive counter was printed but never added to the exit decision, so the gate would have returned 0 and printed 'all mutations applied and detected' over an unobserved rule.\n\nThe gate takes an orphan marker and a backup before its first mutation and repairs from them on the next run, via scripts/mutation_gate_recovery.py - shared with the other two mutating gates rather than copied, because a copied rule drifts and a drifted rule is still trusted.\n\nThe negative control required here was run, not assumed: with identity.go mutated and the marker and backup a killed run would have left, the next gate run reports the repair, restores the file, and passes.\n\nSeparately, and found while fixing this: the mutation-write path had none of restore()'s retry and crashed on a transient Windows sharing violation (errno 22) while writing model/journal.go. Both paths now share one retrying writer.",
+      "dependencies": [],
+      "evidence_ref": [
+        "EV-075"
+      ]
+    },
+    {
+      "id": "WI-174",
+      "phase": 2,
+      "title": "mutation_check_local_env leaves infra/compose.yaml mutated when interrupted",
+      "status": "COMPLETED",
+      "priority": "medium",
+      "acceptance_criteria": [
+        "The gate writes an orphan marker and a backup before its first mutation and repairs from them on the next run, so an interrupted run cannot leave infra/compose.yaml modified",
+        "A negative control proves the recovery restores compose.yaml when the gate is killed mid-mutation",
+        "If the gate is to be wired into CI, it is given a timeout so a deadlock or a hung child process cannot consume the job"
+      ],
+      "source": "Observed during the WI-171 verification sweep; scripts/mutation_check_local_env.py; infra/compose.yaml",
+      "reproduction": "The gate's mutation is to rewrite the postgres image in infra/compose.yaml from postgres:17-alpine to postgres:alpine, which is the exact unpinned-image defect tests/ci/test_local_env.py exists to catch. The run was interrupted while the script was still working, and the mutated file was left behind: the next full pytest run failed test_image_is_pinned_and_published_only_to_loopback with \"docs/05 names PostgreSQL 17 as the system of record, but the stack uses 'postgres:alpine'\". `git diff` showed the single unversioned line, and `git checkout --` restored it.",
+      "notes": "Closed by EV-075.\n\nThe gate takes a marker and a backup before its first mutation and repairs from them on the next run, using the same shared mechanism as WI-173. The negative control was run against the exact failure that was observed: infra/compose.yaml set to postgres:alpine with the marker and backup in place, after which the next gate run reports the repair, restores postgres:17-alpine, and passes.\n\nThe third criterion - a timeout if the gate is wired into CI - was satisfied by what was already there: the gate's pytest subprocess already carries timeout=300 with stdin closed, so no child can consume the job indefinitely. The gate is not wired into CI, and this entry does not change that.\n\nThe docstring claim that caused this defect is corrected rather than left in place. It asserted the artifact 'is restored in a finally so an interrupted run cannot leave a weakened file behind'. A killed process does not execute finally, and believing that sentence is why a killed run's residue went unnoticed for as long as it did. The docstring now says which mechanism is the fast path and which is the real one.",
+      "dependencies": [],
+      "evidence_ref": [
+        "EV-076"
+      ]
+    },
+    {
+      "id": "WI-175",
+      "phase": 2,
+      "title": "cmd/migrate's live tests skip without DATABASE_URL, so its behavioural coverage is invisible by default",
+      "status": "COMPLETED",
+      "priority": "high",
+      "acceptance_criteria": [
+        "A local or CI run of the cmd/migrate package reports how many tests were skipped as well as how many passed, so a green result cannot be a skip wearing the costume of a pass",
+        "The package's live tests are exercised somewhere on every verification run - either DATABASE_URL is set for that package, or a gate asserts that the live tests ran rather than skipped",
+        "A regression confined to the live tests cannot pass the full verification sweep, which is the property that was violated when WI-171's guard fix broke four of those tests and nothing reported it",
+        "The same pass/skip reporting is applied to the other packages that skip without a database, including integration and migrate"
+      ],
+      "source": "Found by an independent review of the WI-171 fix (EV-074); services/control-plane/cmd/migrate/main_test.go disposableDSN",
+      "reproduction": "disposableDSN calls t.Skip when DATABASE_URL is unset, so the four tests that drive a real up/down/status against a scratch database - TestABoundedRevertStopsAtTheTarget, TestAnUnboundedRevertStillRevertsEverything, TestARevertToAVersionThatIsNotAppliedIsRefused and TestARevertToAnUnknownVersionIsRefused - do not run under a plain `go test ./cmd/migrate/`. Observed directly: with DATABASE_URL unset the package passes; with it set, the same tree failed all four, each refused at the destructive guard because the scratch database was named migrate_cli_<pid>_<hex> and so announced itself neither disposable nor prefixed. The breakage had been present across two full verification sweeps and a green mutation gate before a reviewer's question about whether the new test was genuine prompted anyone to run the package with a database attached.",
+      "notes": "Closed by EV-075, and enforced rather than merely repaired.\n\nThe defect was that cmd/migrate's live tests skip when DATABASE_URL is absent and `go test` prints 'ok' either way. They carry no build tag, so they compile into the `go` job, which has no database and reported a clean package result having executed none of them.\n\nA new integration-job step runs all three live-database packages with -v and fails on any skip. All three - cmd/migrate, migrate and integration - not only the package the defect was filed against, because this item's fourth criterion asks for exactly that and a check covering one package would leave the other two able to skip silently in the same way.\n\nFailing on any skip is exact here rather than approximate: every t.Skip in those three packages is a DATABASE_URL skip, and that premise is now asserted by a test rather than trusted, so a future legitimate skip has to be written down as an exemption instead of silently weakening the check. Verified in both directions - with DATABASE_URL unset the detector finds 6 skips and would fail the job; with it set, 98 tests pass across the three packages and 0 skip. The step's existence, its -v requirement, and its non-zero exit are each asserted by tests in tests/ci/test_ci_workflow.py, because a CI step nothing verifies is the same class of defect as the skip it was added to catch.",
+      "dependencies": [],
+      "evidence_ref": [
+        "EV-077"
+      ]
+    },
+    {
+      "id": "WI-176",
+      "phase": 2,
+      "title": "The advisory-lock serialisation test is timing-sensitive against a shared database",
+      "status": "COMPLETED",
+      "priority": "low",
+      "acceptance_criteria": [
+        "TestTwoConcurrentRunsSerialiseOnTheAdvisoryLock cannot fail because the machine was busy, so a failure means the lock genuinely did not serialise",
+        "The test either synchronises on observed state rather than on elapsed time, or is given a tolerance that reflects the property being checked rather than the speed of the host"
+      ],
+      "source": "Observed during the EV-074 verification sweep; services/control-plane/migrate/live_test.go:241",
+      "reproduction": "During a full-module `go test -race -count=1 ./...` with DATABASE_URL set, this test failed once with 'the second run returned while the first still held the lock: err=<nil> applied=[0001_hand.sql]'. It then passed three consecutive times when run alone, and twice more in the identical full-module run. The assertion depends on wall-clock timing between two concurrent processes against one shared database.",
+      "notes": "Closed by EV-075. The cause was not host timing, and this item is worth reading as a record of how that was established rather than as a fix description.\n\nThe test failed intermittently under -race in the six-module loop and never in twenty-plus runs of the package alone. I first attributed it to a bare select over two channels, which Go resolves at random when both are ready. That nondeterminism is real and the fix is correct, but after applying it the test still failed in the six-module loop - so that diagnosis was wrong and the item stayed open.\n\nWhat found it was making each failure message carry its own evidence: elapsed time, whether the first runner finished, and how many sessions hold an advisory lock. The next occurrence reported two lock holders at once with the second run having applied 0001_hand.sql.\n\nwaitForAdvisoryLock counted pg_locks cluster-wide. Every test in the package locks on the same key against one shared PostgreSQL instance, so any other concurrently running test's lock satisfied the wait. The second runner therefore started before the first had locked anything, won the race for the real lock, and applied the migration itself. The old comment's premise - that any advisory lock in a freshly created disposable database belongs to the test - was true of the database and false of the cluster.\n\nProven directly rather than argued: holding an advisory lock in a second database, the unscoped query returns 1 and the database-scoped query returns 0. The fix is that one WHERE clause, and the test still fails when the advisory lock is removed outright, so the fix cost it no detection power. Three consecutive six-module race passes followed; the eliminating evidence is the direct experiment, not the repetition.\n\nAny other flake in this suite that only appears when other packages are testing at the same time is a candidate for the same cause: a synchronisation step reading cluster-wide state on a shared server.",
+      "dependencies": [],
+      "evidence_ref": [
+        "EV-078"
+      ]
     }
   ]
 }

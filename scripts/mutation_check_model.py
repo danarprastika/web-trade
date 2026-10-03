@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import hashlib
 import io
+import os
+import signal
 import subprocess
 import sys
 import time
@@ -24,9 +26,28 @@ from dataclasses import dataclass
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "scripts"))
+
+from mutation_gate_recovery import GateBackup, report_repaired  # noqa: E402
+
 MODEL_PKG = REPO / "services" / "control-plane" / "model"
 AUDIT_PKG = REPO / "services" / "control-plane" / "audit"
 CONTROL_PLANE = REPO / "services" / "control-plane"
+
+# Two timeouts, and the ordering between them is the whole design.
+#
+# GO_TEST_TIMEOUT is Go's own `-timeout`, and it is the one that should normally fire first. When
+# a mutation deadlocks the package, Go does not sit there: it panics with "test timed out after
+# Ns", dumps every goroutine, and exits non-zero. That is a real, attributable test failure, and
+# treating it as one is what lets M29 count as detected rather than inconclusive.
+#
+# The harness timeout is the outer backstop, deliberately longer. Its job is only to stop the
+# gate from hanging forever if Go somehow cannot report - not to pre-empt Go and relabel a
+# verdict Go was about to give. When they were both 300s, the harness won the race, M29 came
+# back as "inconclusive", and a claim the suite can actually detect was reported as undetectable.
+# A backstop that steals the verdict is worse than no backstop.
+GO_TEST_TIMEOUT = 240
+HARNESS_TIMEOUT = GO_TEST_TIMEOUT + 60
 
 
 @dataclass(frozen=True)
@@ -369,15 +390,17 @@ MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         name="M35 in-memory state advances even though the durable write failed",
         filename="journal.go",
-        old="""\t\tif err := persist(ctx, auditID); err != nil {
-\t\t\treturn Outcome{}, reject(contracts.CodeInternal, ErrIncompleteRecord,
-\t\t\t\t"the audit chain accepted the record for this %s but the durable store "+
-\t\t\t\t\t"refused it, so it was not applied and the model's state is unchanged: %v",
-\t\t\t\taction, err)
-\t\t}
-""",
-        new="""\t\t_ = persist(ctx, auditID)
-""",
+        # Re-anchored on 2026-10-02. The original anchor expected the two-tab form
+        # `\t\tif err := persist(...)` returning straight to a reject. journal.go has since
+        # gained a nil-store guard, a `recordRefusal` correction step, and a third level of
+        # indentation, so the anchor matched nothing and the mutation was skipped - reported
+        # honestly as unverified rather than silently counted as a pass.
+        #
+        # The `false &&` form is the one the rest of this file already uses for exactly this
+        # shape of claim (M17, M21, M41): the error is still bound and still evaluated, so the
+        # package keeps building and the mutation exercises the branch rather than the compiler.
+        old="\t\tif err := persist(ctx, auditID); err != nil {",
+        new="\t\tif err := persist(ctx, auditID); false && err != nil {",
         why="a caller told the transition was not applied must find the model where it was. "
         "Swallowing the durable failure and proceeding leaves the in-memory state advanced, "
         "so the caller's retry hits a stale-state refusal and cannot tell 'already done' "
@@ -621,22 +644,73 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def run_tests(pkg: str = "model") -> tuple[bool, str]:
-    """Run one package's tests, returning (passed, output).
+def run_tests(pkg: str = "model") -> tuple[bool, str, bool]:
+    """Run one package's tests, returning (passed, output, timed_out).
 
     pkg names the directory under services/control-plane to test. It is a parameter rather
     than a constant so that one harness covers every package that carries claims, and so
     that a second package cannot arrive with its own copy of this machinery - a second copy
     would carry its own restore bug, and the restore bug is the one defect in this harness
     that can silently corrupt the tree.
+
+    The timeout is not a precaution, it is a fix. Mutation M29 removes the registry's mutex
+    release; the package then deadlocks and `go test` never returns on its own. An unbounded run
+    does not fail, it hangs - so the harness hangs holding a mutated model/identity.go, the run
+    is eventually killed, and the tree keeps the mutation because a killed process never reaches
+    its own restore. That is exactly how identity.go was found holding M29 after a run nobody had
+    interrupted on purpose.
+
+    Go's own `-timeout` is set below this one so that it, not this function, reports the
+    deadlock: Go panics with a goroutine dump and exits non-zero, which is an attributable
+    failure and therefore a detection. The timeout here is a backstop for the case where Go
+    cannot speak, and it is classified as inconclusive rather than detection so that a gate
+    which loses its test runner never quietly claims credit.
     """
-    proc = subprocess.run(
-        ["go", "test", f"./{pkg}/", "-count=1"],
+    proc = subprocess.Popen(
+        ["go", "test", f"./{pkg}/", "-count=1", "-timeout", f"{GO_TEST_TIMEOUT}s"],
         cwd=CONTROL_PLANE,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
         text=True,
+        stdin=subprocess.DEVNULL,
+        # Its own process group, so the timeout kill can take the whole tree. `go test` spawns
+        # the test binary as a child; killing only `go test` leaves that binary running, and a
+        # leftover test process holding a source file is the transient sharing violation that
+        # `restore` has to retry its way out of.
+        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
     )
-    return proc.returncode == 0, (proc.stdout + proc.stderr)
+    try:
+        out, _ = proc.communicate(timeout=HARNESS_TIMEOUT)
+        return proc.returncode == 0, out, False
+    except subprocess.TimeoutExpired:
+        _kill_tree(proc.pid)
+        try:
+            out, _ = proc.communicate(timeout=30)
+        except subprocess.TimeoutExpired:
+            out = ""
+        return False, out, True
+
+
+def _kill_tree(pid: int) -> None:
+    """Kill a process and its descendants. Best effort by design: it runs during recovery."""
+    if sys.platform == "win32":
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(pid)],
+            capture_output=True,
+            timeout=60,
+            stdin=subprocess.DEVNULL,
+        )
+        return
+    try:
+        group = os.getpgid(pid)
+    except OSError:
+        return
+    for signame in ("SIGTERM", "SIGKILL"):
+        try:
+            os.killpg(group, getattr(signal, signame))
+        except OSError:
+            return
+        time.sleep(2)
 
 
 def apply_mutation(m: Mutation, text: str) -> str | None:
@@ -654,25 +728,28 @@ def apply_mutation(m: Mutation, text: str) -> str | None:
     return text[:begin] + region.replace(m.old, m.new, 1) + text[end:]
 
 
-def restore(path: Path, blob: bytes) -> None:
-    """Write blob back to path, retrying while the file is transiently locked.
-
-    This is the function that must never fail silently. Every mutation leaves the tree in a
-    state where a real defect is present, so a restore that gives up on the first I/O error
-    hands the next person a repository with an injected bug in it and no marker saying so -
-    the exact hazard this harness exists to detect, produced by the harness itself.
+def write_with_retry(path: Path, blob: bytes, what: str) -> None:
+    """Write blob to path, retrying while the file is transiently locked. Raise if it never lands.
 
     Windows reports a transient sharing violation as OSError errno 22 rather than a lock
     error, and it happens here for mundane reasons: a go process from the run that just
     finished still has the file mapped, or an indexer or virus scanner opened it between the
-    test run and the write. The first version of this function did a single write and let the
+    test run and the write. The first version of this helper did a single write and let the
     error propagate. It failed on the 42nd mutation of a run, the finally block tried the
     same single write, and the tree was left holding mutation 24 - so the next baseline check
     failed for a reason that had nothing to do with the next piece of work.
 
     Retrying is not sufficient on its own; if the final attempt also fails, the caller must
-    be told. So this raises, and the caller's finally block reports the filenames it could
-    not restore rather than exiting quietly.
+    be told. So this raises, and the caller reports what it could not do rather than exiting
+    quietly.
+
+    Both the mutation write and the restore go through here. That is the whole point of the
+    extraction: the retry lived on `restore` alone for a long time, so the mutation write
+    crashed on a lock the restore would have shrugged off. On 2026-10-02 it did exactly that -
+    `OSError: [Errno 22]` writing model/journal.go partway through a run - and while the
+    finally block did restore the tree, the run died mid-gate and left its backup behind. A
+    transient lock is an expected condition here, not an exceptional one, and no write of a
+    tracked file should be able to fail on it.
     """
     last: OSError | None = None
     for attempt in range(12):
@@ -683,10 +760,25 @@ def restore(path: Path, blob: bytes) -> None:
             last = exc
             time.sleep(0.25 * (attempt + 1))
     raise OSError(
-        f"could not restore {path} after 12 attempts over ~23s; the working tree is left "
-        f"holding an injected mutation. Repair it by hand from this message. "
-        f"Last error: {last}"
+        f"could not {what} {path} after 12 attempts over ~23s. Last error: {last}"
     )
+
+
+def restore(path: Path, blob: bytes) -> None:
+    """Write blob back to path.
+
+    This is the operation that must never fail silently. Every mutation leaves the tree in a
+    state where a real defect is present, so a restore that gives up quietly hands the next
+    person a repository with an injected bug in it and no marker saying so - the exact hazard
+    this harness exists to detect, produced by the harness itself.
+    """
+    try:
+        write_with_retry(path, blob, "restore")
+    except OSError as exc:
+        raise OSError(
+            f"could not restore {path}; the working tree is left holding an injected "
+            f"mutation. Repair it by hand from this message. {exc}"
+        ) from exc
 
 
 def main() -> int:
@@ -707,7 +799,19 @@ def main() -> int:
         print(f"{target} package not found at {pkg}")
         return 1
 
-    baseline_ok, baseline_out = run_tests(target)
+    # Repairs a killed predecessor before anything else, so the baseline run and the originals
+    # read below are the reviewed code rather than whatever the last run left behind. This is
+    # the mechanism, not a nicety: on 2026-10-02 this gate left model/identity.go mutated,
+    # holding M29 with its mutex release removed, and nothing reported it. See WI-173.
+    backup = GateBackup(f"mutation_check_model_{target}", REPO)
+    report_repaired(backup, backup.recover())
+
+    baseline_ok, baseline_out, baseline_hung = run_tests(target)
+    if baseline_hung:
+        print(f"BASELINE HUNG: the {target} package had no verdict after {HARNESS_TIMEOUT}s on "
+              f"unmodified code. Every result below would be meaningless.")
+        print(baseline_out[-2000:])
+        return 1
     if not baseline_ok:
         print("BASELINE FAILS; the mutation results would be meaningless.")
         print(baseline_out[-2000:])
@@ -716,12 +820,16 @@ def main() -> int:
 
     original = {m.filename: (pkg / m.filename).read_bytes() for m in mutations}
     digests = {name: sha256(pkg / name) for name in original}
+    # Recorded before the first mutation, so a kill between here and the end of the try block is
+    # still repairable by the next run.
+    backup.take({pkg / name: blob for name, blob in original.items()})
 
     survived: list[Mutation] = []
     skipped: list[Mutation] = []
     unrestored: list[str] = []
     applied = 0
     build_failures = 0
+    inconclusive = 0
     try:
         for m in mutations:
             file = pkg / m.filename
@@ -737,10 +845,17 @@ def main() -> int:
                 skipped.append(m)
                 print(f"SKIP  {m.name}: anchor not found in {m.filename}")
                 continue
-            file.write_text(mutated, encoding="utf-8", newline="\n")
+            write_with_retry(file, mutated.encode("utf-8"), "apply the mutation")
             applied += 1
-            passed, out = run_tests(target)
-            if passed:
+            passed, out, hung = run_tests(target)
+            if hung:
+                # The backstop fired, meaning Go could not report the deadlock itself. That
+                # exercised no verdict, so it is inconclusive rather than a detection - but it
+                # is still not a pass, and the summary must not fold it into coverage.
+                inconclusive += 1
+                print(f"HUNG      {m.name}")
+                print(f"          no verdict after {HARNESS_TIMEOUT}s - inconclusive, NOT a detection")
+            elif passed:
                 survived.append(m)
                 print(f"SURVIVED  {m.name}")
                 print(f"          {m.why}")
@@ -786,6 +901,12 @@ def main() -> int:
         # breaking the build has verified nothing. Reporting it as coverage is the specific
         # error this line exists to prevent.
         print(f"of which {build_failures} were build failures with no test run - NOT detections")
+    if inconclusive:
+        print(f"of which {inconclusive} hung until the {HARNESS_TIMEOUT}s backstop - NOT detections")
+
+    # The restore was verified below, so the backup has done its job. Leaving it would make the
+    # next run report a repair that never happened.
+    backup.discard()
 
     if skipped:
         print("\nSKIPPED MUTATIONS (an unverified claim, not a pass):")
@@ -800,6 +921,14 @@ def main() -> int:
         return 1
     if build_failures:
         print("\nBUILD-FAILURE MUTATIONS (no test ran, so nothing was verified):")
+        return 1
+    if inconclusive:
+        # Must be part of the exit decision, not just the summary. A hung mutation means one
+        # claim is unverified, and returning 0 here would have the gate print "all mutations
+        # applied and detected" over a rule it never actually observed. The report line above
+        # is not enough on its own - an exit code that ignores a number the gate just printed
+        # is the same class of defect as reporting a build failure as a detection.
+        print("\nINCONCLUSIVE MUTATIONS (the test runner never returned a verdict):")
         return 1
     if unrestored:
         return 1

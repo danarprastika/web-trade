@@ -1,9 +1,9 @@
 {
   "gate": "G0",
   "verdict": "PENDING_HUMAN_ATTESTATION",
-  "commit": "15d978ff5658c0646a63ce5ecc74b998e8bc05a4",
+  "commit": "7342229eb7a141bd81e082e022180b26dacdbb0f",
   "docs_dirty": false,
-  "executed_at": "2026-09-29T11:16:45Z",
+  "executed_at": "2026-10-03T04:58:16Z",
   "executed_by": "scripts/verify_spec_gate.py",
   "human_reviewer": null,
   "criteria": [

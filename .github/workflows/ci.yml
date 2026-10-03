@@ -289,6 +289,69 @@ jobs:
         # failing rather than only observed passing.
         run: python scripts/mutation_check_anchor.py
 
+      - name: audit fan-out tests can fail
+        # docs/22 section 4 requires the authoritative audit stream to reach a distinct account,
+        # project and region under object-lock retention, because one database is not independent
+        # of the process that writes to it. The Sink interface has always permitted a second
+        # destination, but permission is not capability: nothing assembled one, and no test could
+        # have failed if the property were dropped, because nothing depended on it. A requirement
+        # stated only in a comment is a requirement nobody is checking.
+        #
+        # audit.FanOut is that capability, and its correctness is several independent promises in
+        # different places - the constructor refuses fewer than two destinations, Export does not
+        # stop at the first failure, Export does not report success unless every destination
+        # stored the batch, every failure is named, an empty batch touches nothing. One mutation
+        # would measure a fraction of them and still print PASS, which is the EV-064 shape of a
+        # check reporting success without having exercised anything. So this gate runs one
+        # mutation per promise and requires each to be noticed.
+        #
+        # It credits a detection only on a `--- FAIL` line, reusing the classification in
+        # mutation_check_anchor.py so the repository holds exactly one definition of the
+        # distinction between a test noticing something and a package not building. It adds one
+        # check the anchor gate does not need: because these mutations are small textual
+        # substitutions inside a shared loop, each one is required to compile before any test is
+        # run under it. A mutation that does not compile makes every test in the package exit
+        # non-zero with none of them running, which would otherwise be reported as a detection for
+        # all of them at once. A malformed mutation is a bug in the gate and is reported as
+        # UNCERTIFIED rather than credited.
+        #
+        # Baseline first, mutation verified as landed before anything is interpreted, file
+        # restored byte-for-byte in a finally block.
+        run: python scripts/mutation_check_fanout.py
+
+      - name: destructive-migration guard can fail
+        # `-direction down` with no -to reverts the whole applied set, and
+        # db/migrations/0002_audit.sql's down body is
+        # `DROP TABLE IF EXISTS audit_records CASCADE` followed by the rest of the audit schema.
+        # That is the tamper-evident chain the platform's compliance story rests on, destroyed by
+        # one flag against whatever DATABASE_URL is exported.
+        #
+        # WI-171 exists because the guard against that lived in
+        # integration/harness_test.go, a test file `go run ./cmd/migrate` never executes - a
+        # protection present in the repository and absent from the product. The rule moved to
+        # migrate/destructive.go and the command consults it before opening a connection.
+        #
+        # This gate breaks each of the guard's nine promises and requires the matching test to
+        # notice: the command consulting it at all, the refusal exiting non-zero, the opt-in not
+        # being sufficient alone, the strict policy staying strict, the opt-in being compared
+        # exactly, an unnamed database being refused, a redirecting query string being refused,
+        # and the refusal naming the database without leaking the password.
+        #
+        # Two things it holds the tests to that a non-zero exit cannot express. It credits a
+        # detection only on a `--- FAIL` line, reusing the classification in
+        # mutation_check_anchor.py so there is one definition of "a test noticed" in the
+        # repository. And it requires each mutation to compile before running any test under it,
+        # because this gate mutates source files that other tests in the package also run: a
+        # mutation that does not compile would otherwise make every test in the package exit
+        # non-zero with none of them running, reported as a detection for all of them at once.
+        #
+        # It also takes a backup of both files before mutating anything and repairs from it on the
+        # next run if killed. A `finally` block does not run when a CI job times out, and a killed
+        # run leaves a mutated production file with nothing marking it - which happened here, and
+        # left cmd/migrate permitting a destructive migration on the opt-in alone until the next
+        # run's pre-flight check reported a target it could no longer find.
+        run: python scripts/mutation_check_destructive_migrate.py
+
       - name: the G5 gate report is current
         # The G5 report is what a reviewer reads to decide that the gate passed. Until this step
         # existed it was a snapshot with nothing tying it to the code it describes: its digests
@@ -728,6 +791,52 @@ jobs:
             go test -tags=integration -race "./$m/..."
             echo "::endgroup::"
           done < modules.txt
+
+      - name: the live migration tests actually ran
+        # WI-175. Three packages hold tests that skip when DATABASE_URL is absent, and `go test`
+        # prints "ok" whether it ran them or skipped them:
+        #
+        #   cmd/migrate   main_test.go:114      - six live tests calling disposableDSN
+        #   migrate       live_test.go:36       - the live migration tests
+        #   integration   harness_test.go:51, destructive_guard_test.go:280,
+        #                 entrypoint_test.go:495
+        #
+        # None carry a build tag, so they also compile into the `go` job - which has no database
+        # and no DATABASE_URL, and therefore skipped all of them while reporting a clean package
+        # result. The integration job does run them, so coverage was not lost, but a job that
+        # reports success having executed none of itself is the specific failure this repository
+        # has now recorded repeatedly, and here it was reachable by deleting one environment
+        # variable.
+        #
+        # This job already proves DATABASE_URL is set and reachable, so a skip here cannot mean
+        # "no database configured". It can only mean the tests certified nothing.
+        #
+        # Failing on *any* skip is deliberate and is exact rather than approximate: within these
+        # three packages every t.Skip is a DATABASE_URL skip, verified by search. If a genuinely
+        # legitimate skip is ever added, this fails loudly and the exemption gets written down
+        # here instead of being assumed.
+        run: |
+          set -euo pipefail
+          check_no_skips() {
+            local label="$1"; shift
+            local out
+            if ! out="$(go test -count=1 -v "$@" 2>&1)"; then
+              echo "$out"
+              exit 1
+            fi
+            echo "::group::$label"
+            echo "$out"
+            echo "::endgroup::"
+            if printf '%s\n' "$out" | grep -q '^--- SKIP'; then
+              echo "::error::$label skipped tests even though DATABASE_URL is set and reachable; those tests verified nothing"
+              printf '%s\n' "$out" | grep '^--- SKIP'
+              exit 1
+            fi
+          }
+          check_no_skips "cmd/migrate live tests" ./services/control-plane/cmd/migrate/...
+          check_no_skips "migrate live tests"      ./services/control-plane/migrate/...
+          check_no_skips "integration tests"       -tags=integration ./services/control-plane/integration/...
+          printf 'all live-database tests ran; none skipped\n'
 
   artifact:
     name: artifact build (protected branch)

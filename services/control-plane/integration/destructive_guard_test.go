@@ -12,8 +12,11 @@
 //   - A destructive migration reset against a database that is not verifiably disposable is
 //     refused, and the refusal names that database.
 //   - The refusal is a failure, never a skip and never a warning.
-//   - The opt-in is an exact string comparison, and it is the second of two requirements, not
-//     a single switch.
+//   - The opt-in is an exact string comparison, and it is a deliberate full override rather than
+//     a single switch. A DSN announcing itself disposable on this machine needs no opt-in; any
+//     other named database is allowed only by the opt-in, which covers host and name together.
+//     What the opt-in cannot authorise is a DSN naming no database, since there would be nothing
+//     to name in the refusal.
 
 package integration
 
@@ -45,10 +48,10 @@ func TestALocalDisposableDatabaseNeedsNoOptIn(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			verdict := evaluateDestructiveTarget(tc.dsn, "")
-			if !verdict.allowed {
+			if !verdict.Allowed {
 				t.Fatalf("refused a disposable database with no opt-in: %s", destructiveRefusalMessage(verdict))
 			}
-			if verdict.overridden {
+			if verdict.Overridden {
 				t.Error("verdict reports an override for a target that needed no opt-in")
 			}
 		})
@@ -104,15 +107,15 @@ func TestDestructiveResetIsRefusedAgainstANonDisposableDatabase(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			verdict := evaluateDestructiveTarget(tc.dsn, "")
-			if verdict.allowed {
-				t.Fatalf("allowed a destructive reset against %s with no opt-in", verdict.target)
+			if verdict.Allowed {
+				t.Fatalf("allowed a destructive reset against %s with no opt-in", verdict.Target)
 			}
-			if verdict.reason == "" {
+			if verdict.Reason == "" {
 				t.Error("refused without a reason; a refusal an operator cannot act on is a bug")
 			}
-			if tc.database != "" && verdict.target.database != tc.database {
+			if tc.database != "" && verdict.Target.Database != tc.database {
 				t.Errorf("refusal is about database %q, expected %q",
-					verdict.target.database, tc.database)
+					verdict.Target.Database, tc.database)
 			}
 			// The operator has to be able to tell which database was protected.
 			message := destructiveRefusalMessage(verdict)
@@ -132,7 +135,7 @@ func TestTheRefusalNamesTheProtectedDatabaseAndNeverThePassword(t *testing.T) {
 	)
 
 	verdict := evaluateDestructiveTarget(dsn, "")
-	if verdict.allowed {
+	if verdict.Allowed {
 		t.Fatal("a production DSN was allowed; every other assertion here is vacuous")
 	}
 	message := destructiveRefusalMessage(verdict)
@@ -146,8 +149,8 @@ func TestTheRefusalNamesTheProtectedDatabaseAndNeverThePassword(t *testing.T) {
 	if strings.Contains(message, password) {
 		t.Errorf("refusal leaked the password:\n%s", message)
 	}
-	if strings.Contains(verdict.target.String(), password) {
-		t.Errorf("the rendered target leaked the password: %s", verdict.target)
+	if strings.Contains(verdict.Target.String(), password) {
+		t.Errorf("the rendered target leaked the password: %s", verdict.Target)
 	}
 	// The user is kept: it identifies which connection was refused, and it is not a secret.
 	if !strings.Contains(message, "webtrade@db.internal") {
@@ -166,11 +169,11 @@ func TestTheOptInMustBeExactlyOneAndNeverSkips(t *testing.T) {
 	for _, optIn := range []string{"", " ", "0", "true", "TRUE", "yes", "on", "1 ", " 1", "11", "2"} {
 		t.Run("refuses "+strings.ReplaceAll(strings.TrimSpace(optIn), " ", "<space>"), func(t *testing.T) {
 			verdict := evaluateDestructiveTarget(production, optIn)
-			if verdict.allowed {
+			if verdict.Allowed {
 				t.Fatalf("opt-in value %q was accepted; the opt-in must be the exact string %q",
 					optIn, destructiveOptInValue)
 			}
-			if verdict.reason == "" {
+			if verdict.Reason == "" {
 				t.Error("refused without a reason")
 			}
 		})
@@ -178,10 +181,10 @@ func TestTheOptInMustBeExactlyOneAndNeverSkips(t *testing.T) {
 
 	t.Run("accepts the exact value and says so", func(t *testing.T) {
 		verdict := evaluateDestructiveTarget(production, destructiveOptInValue)
-		if !verdict.allowed {
+		if !verdict.Allowed {
 			t.Fatalf("the documented opt-in did not work: %s", destructiveRefusalMessage(verdict))
 		}
-		if !verdict.overridden {
+		if !verdict.Overridden {
 			t.Error("an opt-in override was not recorded; the run log would not show it happened")
 		}
 	})
@@ -191,11 +194,11 @@ func TestTheOptInMustBeExactlyOneAndNeverSkips(t *testing.T) {
 		// of the variable that makes it safe. An override that can widen into "whatever this
 		// string parses as" is how a guard becomes a formality.
 		verdict := evaluateDestructiveTarget("postgres://webtrade:hunter2@db.internal:5432/", destructiveOptInValue)
-		if verdict.allowed {
+		if verdict.Allowed {
 			t.Fatal("an unnamed database was allowed by the opt-in")
 		}
-		if !strings.Contains(verdict.reason, "no database") {
-			t.Errorf("refusal does not explain the unnamed database: %s", verdict.reason)
+		if !strings.Contains(verdict.Reason, "no database") {
+			t.Errorf("refusal does not explain the unnamed database: %s", verdict.Reason)
 		}
 	})
 }
@@ -278,13 +281,13 @@ func TestTheConfiguredDatabaseSatisfiesTheDestructiveGuard(t *testing.T) {
 	}
 
 	verdict := evaluateDestructiveTarget(dsn, os.Getenv(destructiveOptInEnv))
-	if !verdict.allowed {
+	if !verdict.Allowed {
 		t.Fatalf("the configured database is refused by the destructive guard, so "+
 			"TestMigratorAppliesRevertsAndReappliesTheRealSet cannot run:\n%s",
 			destructiveRefusalMessage(verdict))
 	}
 	t.Logf("destructive guard verdict for the configured target %s: allowed (overridden=%v)",
-		verdict.target, verdict.overridden)
+		verdict.Target, verdict.Overridden)
 }
 
 // lib/pq applies the path first and then every query parameter, last write winning. That makes

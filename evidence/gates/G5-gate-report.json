@@ -70,8 +70,8 @@
   ],
   "evidence_artifacts": {
     "hash": "sha256",
-    "count": 88,
-    "total_bytes": 1084190,
+    "count": 94,
+    "total_bytes": 1161142,
     "note": "Every path is relative to the repository root and every digest is over the exact bytes at the commit above. A criterion cannot be re-verified without these.",
     "artifacts": [
       {
@@ -120,14 +120,24 @@
         "bytes": 4367
       },
       {
+        "path": "services/control-plane/audit/fanout.go",
+        "sha256": "bd5808cdb3de7ef5730597d9e9e1071e3f0d080b592a1822c5a8e1dbdb81f725",
+        "bytes": 7520
+      },
+      {
+        "path": "services/control-plane/audit/fanout_test.go",
+        "sha256": "4ad496f9e863871cc3b8e9833453199186231ca5ddc022fadeff199091d7b778",
+        "bytes": 8491
+      },
+      {
         "path": "services/control-plane/audit/guard.go",
         "sha256": "ca122ce4519258a878d038737c97523ba578f511f7f72c8e5c08fede979fbe87",
         "bytes": 10926
       },
       {
         "path": "services/control-plane/audit/guard_test.go",
-        "sha256": "08e53326eb68552a42fe014b6b0fba629378501cf957ba343e25241f20934365",
-        "bytes": 11999
+        "sha256": "3dbfeffe6a597306a1df6bb91dc70dd7422fa9fd6192937d42d0c8dcaf08ef20",
+        "bytes": 20963
       },
       {
         "path": "services/control-plane/audit/keys.go",
@@ -225,14 +235,19 @@
         "bytes": 12084
       },
       {
+        "path": "services/control-plane/cmd/migrate/destructive_guard_test.go",
+        "sha256": "269e9d537ec4a916c5023a67af620ebc20992e166a0cce189f41d06948a6624b",
+        "bytes": 11553
+      },
+      {
         "path": "services/control-plane/cmd/migrate/main.go",
-        "sha256": "7e256beb715e8509d5207f1369158a570e88cbd37247c4432ce90b236a71d8f8",
-        "bytes": 8745
+        "sha256": "dbc3500b4efa4d44226345b8c6bef0af45f066a5108b09cab443dceadda6c019",
+        "bytes": 12069
       },
       {
         "path": "services/control-plane/cmd/migrate/main_test.go",
-        "sha256": "e8bed87001e2b1c04b6a7a7061e5d6c50a795e85c51eebcef89a572f4332fe8e",
-        "bytes": 15428
+        "sha256": "bcea65c930766306d42ba4a6a821fee88755721968fef50468f3216052b40b2a",
+        "bytes": 17525
       },
       {
         "path": "services/control-plane/db/dbgen/model_registry.sql.go",
@@ -266,8 +281,8 @@
       },
       {
         "path": "services/control-plane/integration/destructive_guard_test.go",
-        "sha256": "f533ffc3f0cf3f17920e415aa0ae1e71f706ef7230784aa7c6a095e037de4fd8",
-        "bytes": 14044
+        "sha256": "73a566988342ddc12d158c1be19cdce2bbdec1103cd5d6d0580e68e7bb995bd7",
+        "bytes": 14344
       },
       {
         "path": "services/control-plane/integration/entrypoint_test.go",
@@ -276,8 +291,8 @@
       },
       {
         "path": "services/control-plane/integration/harness_test.go",
-        "sha256": "5918b2aee68b52f7e785466e766e81055a8dd7f60f62dc0aa3851570cc8219d0",
-        "bytes": 15024
+        "sha256": "371e308160f90aea39d4166237dc5d85230cb1fb24b598264251af5a1282a3d8",
+        "bytes": 8366
       },
       {
         "path": "services/control-plane/integration/identity_test.go",
@@ -300,9 +315,24 @@
         "bytes": 11349
       },
       {
+        "path": "services/control-plane/integration/sink_atomicity_test.go",
+        "sha256": "30a90dc534efe2ddf8bd2fd7bddf800ad7c719b252893b37190e215a643ff3f0",
+        "bytes": 10443
+      },
+      {
+        "path": "services/control-plane/migrate/destructive.go",
+        "sha256": "4ffbb522be9c79bef9384390707bd55d72ee9aa01e4ed87f07772e7a306b53d5",
+        "bytes": 17126
+      },
+      {
+        "path": "services/control-plane/migrate/destructive_test.go",
+        "sha256": "e9f0d210420f8125dbbf455047fc9c81dd835d73b06690a4ec1ee6c714fc332c",
+        "bytes": 9685
+      },
+      {
         "path": "services/control-plane/migrate/live_test.go",
-        "sha256": "4968d75d221d4edfd4360453f291c1eca354fa635a2c611eb4a53606853f142f",
-        "bytes": 13759
+        "sha256": "af5eac828f32d882827ebd96ea387ec6257bd0742ece0c091f8dd20b477e5e9c",
+        "bytes": 17866
       },
       {
         "path": "services/control-plane/migrate/lock_test.go",

@@ -1,8 +1,14 @@
 """Mutation check: confirm each static test fails when the property it guards is broken.
 
 A test that cannot fail is documentation, not a control. Each mutation breaks exactly one
-property in the real artifact, runs the suite, and restores the file. The artifact is
-restored in a `finally` so an interrupted run cannot leave a weakened file behind.
+property in the real artifact, runs the suite, and restores the file.
+
+Restoration has two mechanisms, and the distinction matters. The `finally` block is the fast path
+for a run that finishes normally. It is not what protects the repository, because a killed process
+does not execute it - an earlier version of this docstring claimed it was, and that claim was
+believed until a killed run left `postgres:alpine` in infra/compose.yaml. The real mechanism is
+the backup taken before any mutation, which the next run repairs from; see
+scripts/mutation_gate_recovery.py.
 """
 
 import pathlib
@@ -10,6 +16,10 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+from mutation_gate_recovery import GateBackup, report_repaired  # noqa: E402
+
 COMPOSE = ROOT / "infra" / "compose.yaml"
 INIT = ROOT / "infra" / "postgres" / "init" / "10-environments.sh"
 GITATTRIBUTES = ROOT / ".gitattributes"
@@ -51,6 +61,17 @@ def write(path: pathlib.Path, data: bytes) -> None:
 
 
 def main() -> int:
+    # A killed run does not execute `finally`, so the restore below is not the mechanism that
+    # keeps the repository clean - it is the fast path for a run that finishes normally. The
+    # mechanism is the backup below, which the next run repairs from. This is not
+    # belt-and-braces: on 2026-10-02 a run of this gate was interrupted mid-mutation and left
+    # infra/compose.yaml at `postgres:alpine` instead of `postgres:17-alpine`. Nothing reported
+    # it. The next full pytest run failed
+    # test_image_is_pinned_and_published_only_to_loopback, and the failure presented as a
+    # regression somebody else had introduced.
+    backup = GateBackup("mutation_check_local_env", ROOT)
+    report_repaired(backup, backup.recover())
+
     # Bytes, not text. `Path.write_text` opens in text mode with universal newlines, and on
     # Windows that rewrites every LF as CRLF. A shell script that gains CRLF fails to run
     # under /bin/sh, so a text-mode mutation harness silently breaks the artifact it is
@@ -58,6 +79,7 @@ def main() -> int:
     # harness restored a correct script as a broken one and the live check failed for
     # reasons that had nothing to do with the code under test.
     original = {p: read(p) for p in (COMPOSE, INIT, GITATTRIBUTES)}
+    backup.take(original)
     missed = 0
     try:
         for label, path, old, new in MUTATIONS:
@@ -90,6 +112,11 @@ def main() -> int:
         if read(path) != data:
             print(f"  ERROR  {path} was not restored byte-for-byte")
             return 1
+
+    # The restore is verified, so the backup has served its purpose and leaving it would make the
+    # next run "repair" files that are already correct - harmless, but it reports a repair that
+    # did not happen, and this gate is about not lying about what it did.
+    backup.discard()
 
     print()
     print("all mutations detected and all files restored byte-for-byte"
