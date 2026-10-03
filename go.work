@@ -9,7 +9,7 @@
 // Toolchain versions are pinned exactly. CI must fail on toolchain drift or an unpinned
 // dependency (docs/00_README.md, toolchain lifecycle).
 
-go 1.26.2
+go 1.26.8
 
 use (
 	./adapters/venues

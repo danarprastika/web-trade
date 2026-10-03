@@ -40,7 +40,7 @@ concurrency:
 env:
   # Kept in step with toolchain/versions.env. The `toolchain` job asserts the two agree,
   # so this duplication cannot silently rot.
-  GO_VERSION: '1.26.2'
+  GO_VERSION: '1.26.8'
   NODE_VERSION: '24.18.0'
   PYTHON_VERSION: '3.14'
   # Exact image tag, never `latest`. Mirrors toolchain/versions.env.
@@ -568,27 +568,98 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: resolve Go modules for scanning
-        # Same root-relative `./...` trap as the go job: it matches no module in this
-        # workspace. The action takes a pattern, so the resolved modules are joined into
-        # one comma-separated list.
-        id: modules
+        # govulncheck resolves exactly ONE module, rooted at the directory it is invoked
+        # from, and refuses to start when that directory has no go.mod:
+        #     govulncheck: no go.mod file
+        # This repository root has go.work but deliberately no root go.mod, so the scan
+        # cannot be driven from here at all. The previous
+        # `golang/govulncheck-action` invocation ran `govulncheck -C . <patterns>` at the
+        # checkout root, so it exited 1 with that message on every run and no Go code was
+        # ever scanned. EV-014 recorded govulncheck as configuration-only and never
+        # observed, which is exactly how a permanently broken gate stayed invisible: it
+        # never produced a finding to review, only a red job nobody was reading.
+        #
+        # The fix is a module list plus one invocation per module, not a root go.mod.
+        # Adding a root go.mod would give the repository a second build definition
+        # covering nothing (docs/02 section 8) and would make `./...` at the root
+        # silently scan an empty module instead of failing loudly.
+        #
+        # The list comes from `go work edit -json` rather than from parsing go.work with
+        # awk/grep, for the same reason the go job does it: go.work uses a `use (...)`
+        # block, so a naive /^use\s+(\S+)/ pattern captures the literal "(" and the scan
+        # would cover nothing while reporting success.
         run: |
           set -euo pipefail
-          packages="$(go work edit -json | jq -r '[.Use[].DiskPath | ".\(.)/..."] | join(",")')"
-          if [ -z "$packages" ]; then
-            echo "::error::no modules resolved from go.work"
+          go work edit -json | jq -r '.Use[].DiskPath' > modules.txt
+          count="$(wc -l < modules.txt)"
+          if [ "$count" -eq 0 ]; then
+            echo "::error::no modules resolved from go.work; refusing to run an empty scan"
             exit 1
           fi
-          echo "packages=$packages" >> "$GITHUB_OUTPUT"
-          echo "scanning: $packages"
+          echo "scanning $count modules:"
+          cat modules.txt
+          # Each listed module must actually exist and must be its own module root, so a
+          # typo in go.work fails here rather than as a confusing "no go.mod file" from
+          # inside govulncheck, where the message names no module and reads like a tool bug.
+          while read -r m; do
+            if [ ! -f "$m/go.mod" ]; then
+              echo "::error::go.work lists $m but $m/go.mod does not exist"
+              exit 1
+            fi
+          done < modules.txt
+
+      - name: install govulncheck
+        # Pinned to an exact version, never @latest. The action this replaces installed
+        # `@latest`, which means the scanner's behaviour could change under a commit that
+        # changed nothing, and the finding set with it. `go install module@version`
+        # verifies the download against the Go checksum database, so this pin is enforced
+        # by the toolchain rather than by a comment, which is a stronger property than
+        # the SHA comment it replaces.
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
 
       - name: go vulnerability scan
         # govulncheck is reachability-aware: it reports only vulnerabilities on a path
         # the code can actually take, which keeps the signal usable at a blocking gate.
-        uses: golang/govulncheck-action@b625fbe08f3bccbe446d94fbf87fcc875a4f50ee # v1.0.4
-        with:
-          go-version-input: ${{ env.GO_VERSION }}
-          go-package: ${{ steps.modules.outputs.packages }}
+        #
+        # One invocation per module, with -C pointing at the module directory, because
+        # govulncheck resolves a single module root. The list is the same one the go job
+        # builds, so a module added to go.work is scanned with no workflow edit.
+        #
+        # `set -e` is deliberately NOT used. govulncheck exits 3 when it finds a reachable
+        # vulnerability, and failing fast would stop at the first affected module, so an
+        # operator would fix them one CI run at a time. Instead every module is scanned and
+        # the failures are aggregated, which is the same "report every problem in one run"
+        # property the toolchain gate implements.
+        run: |
+          set -uo pipefail
+          status=0
+          while read -r m; do
+            echo "::group::govulncheck $m"
+            govulncheck -C "$m" -format text ./... || {
+              status=1
+              echo "::error::govulncheck reported findings in $m"
+            }
+            echo "::endgroup::"
+          done < modules.txt
+          if [ "$status" -ne 0 ]; then
+            echo "::error::Go vulnerability scan failed; see the groups above for the affected modules"
+          fi
+          exit "$status"
+
+      - name: prove the vulnerability scan can fail
+        # Executed proof that the step above still blocks. A vulnerability gate can be wired to
+        # govulncheck perfectly and still exit 0 when the scanner reports something; only running
+        # the committed step against a fake scanner distinguishes the two. The script also asserts
+        # the premise the step rests on - that govulncheck refuses a workspace root with no
+        # go.mod - so if the tool ever learns to resolve workspaces, the redundant per-module
+        # structure is flagged rather than left behind unexplained.
+        #
+        # It runs here rather than in the toolchain job because the real-scanner assertion needs
+        # govulncheck on PATH, which only exists in this job, and because a proof about a gate
+        # belongs next to the gate.
+        run: |
+          python -m pip install --disable-pip-version-check -r tests/ci/requirements.txt
+          python scripts/prove_vuln_scan_gate.py
 
       - name: install audited dependencies
         working-directory: apps/web

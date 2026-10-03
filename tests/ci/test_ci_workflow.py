@@ -42,7 +42,6 @@ EXPECTED_ACTIONS = {
     "actions/setup-python": "v5.6.0",
     "actions/upload-artifact": "v4.6.2",
     "github/codeql-action": "v3.28.17",
-    "golang/govulncheck-action": "v1.0.4",
     "anchore/sbom-action": "v0.20.6",
     "sigstore/cosign-installer": "v3.8.2",
     "docker/build-push-action": "v6.17.0",
@@ -330,6 +329,83 @@ def test_dependency_scan_and_integration_use_module_scoped_patterns(workflow: di
             f"job {job_name!r} uses a root-relative Go package pattern, which does not "
             f"match any module in this workspace"
         )
+
+
+def test_the_go_vulnerability_scan_runs_inside_a_module_and_can_fail(workflow: dict) -> None:
+    """WI-176. The Go vulnerability scan could never run, and never said so.
+
+    govulncheck resolves exactly one module, rooted at the directory it is invoked from, and exits
+    1 with "no go.mod file" when that directory has no go.mod. This repository has go.work at the
+    root and no root go.mod, so the scan cannot be driven from the checkout root at all. The
+    previous wiring used `golang/govulncheck-action`, which runs `govulncheck -C . <patterns>` at
+    the root, so every run failed that way and no Go code was ever scanned.
+
+    It stayed invisible because a gate that always errors produces no findings to review. EV-014
+    records the scan as configuration-only and never observed, which is exactly the caveat a broken
+    gate generates about itself, and no finding ever contradicted it.
+
+    These assertions encode the structure that makes the scan able to run. They are deliberately
+    static: they need no network and no scanner, so they hold in every job. The behaviour - that
+    the step exits non-zero when a module reports a vulnerability, and keeps scanning afterwards -
+    is proved by execution in scripts/prove_vuln_scan_gate.py, which runs this same committed
+    `run:` block against a fake scanner.
+    """
+    job = (workflow.get("jobs") or {}).get("dependency-scan") or {}
+    steps = job.get("steps") or []
+    runs = "\n".join(str(s.get("run", "")) for s in steps)
+    uses = "\n".join(str(s.get("uses", "")) for s in steps)
+
+    assert "govulncheck-action" not in uses, (
+        "golang/govulncheck-action runs `govulncheck -C .` at the checkout root, which cannot work "
+        "in a workspace with no root go.mod; invoke govulncheck once per module instead"
+    )
+
+    install = re.search(r"go install\s+golang\.org/x/vuln/cmd/govulncheck@(\S+)", runs)
+    assert install, (
+        "with the action gone, the job must install govulncheck itself or the scan step runs "
+        "against a binary that is not there"
+    )
+    assert install.group(1) != "latest", (
+        "govulncheck must be pinned to an exact version; @latest lets the scanner's behaviour, "
+        "and therefore the finding set, change under a commit that changed nothing"
+    )
+
+    # govulncheck's own module resolution is the defect, so the module list has to come from the
+    # Go toolchain rather than a regex over go.work.
+    assert re.search(r"go work edit -json.*DiskPath", runs, re.DOTALL), (
+        "the module list must come from `go work edit -json`; parsing go.work with a regex "
+        "captures the literal '(' from the `use (...)` block and scans nothing"
+    )
+    assert re.search(r'govulncheck\s+-C\s+"\$m"', runs), (
+        "govulncheck must be invoked with -C naming each module, because it resolves one module "
+        "rooted at its working directory; scanning from the repository root is the original bug"
+    )
+    assert re.search(r"done < modules\.txt", runs), (
+        "the scan must iterate the resolved module list, so a module added to go.work is scanned "
+        "with no workflow edit"
+    )
+
+    # A scan over zero modules is a pass over nothing.
+    assert "refusing to run an empty scan" in runs, (
+        "the scan must fail when go.work resolves to zero modules, otherwise it reports success "
+        "having scanned no code"
+    )
+
+    # Aggregating failures so every module is scanned must not discard the failure.
+    assert re.search(r'govulncheck[^\n]*\|\|', runs), (
+        "the step must tolerate a failing module so the remaining modules are still scanned, and "
+        "that requires an explicit `||` branch; a bare invocation under `set -e` stops at the "
+        "first affected module"
+    )
+    assert re.search(r'status=1', runs) and re.search(r'exit "\$status"', runs), (
+        "the step must record a failing module and exit with that status; a status variable that "
+        "is never read makes the aggregation a pass"
+    )
+
+    assert "prove_vuln_scan_gate.py" in runs, (
+        "the behavioural proof must run in CI: a static assertion cannot tell a gate that blocks "
+        "from one that reports success after scanning everything"
+    )
 
 
 def test_integration_job_fails_if_the_live_migration_tests_skipped(workflow: dict) -> None:

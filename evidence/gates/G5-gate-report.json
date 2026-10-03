@@ -261,7 +261,7 @@
       },
       {
         "path": "services/control-plane/go.mod",
-        "sha256": "b9f11a0ba71bb93e27752d41734781c9dd2f390d82b3cd6796b48a826d8b652a",
+        "sha256": "438acc5bb55da013fa9d68328e4704b5f6099c5e9fc8266d30bbfa4aa06ad879",
         "bytes": 1258
       },
       {

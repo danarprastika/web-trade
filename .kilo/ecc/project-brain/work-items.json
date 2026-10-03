@@ -1110,6 +1110,50 @@
       "evidence_ref": [
         "EV-078"
       ]
+    },
+    {
+      "id": "WI-177",
+      "phase": 2,
+      "title": "The pinned Go toolchain itself carried seven reachable standard-library vulnerabilities",
+      "status": "COMPLETED",
+      "priority": "high",
+      "acceptance_criteria": [
+        "Every place the Go version is pinned - toolchain/versions.env, the CI workflow's GO_VERSION, all six go.mod files, and go.work - names the same version, so the workspace cannot reject the modules",
+        "The bump stays within the supported 1.26 line rather than moving to a new minor release, because the fix required is a patch and a minor upgrade would pull unrelated language and standard-library changes",
+        "govulncheck reports no reachable vulnerability in any module at the new pin, which is the property the bump exists to establish",
+        "gofmt, go vet, go build, go test and go test -race pass across all six modules at the new version, plus go vet -tags=integration and the integration package against a live database",
+        "No ADR is written, because a patch within a supported release line is not the toolchain change docs/00 reserves an ADR for - and that reading is stated rather than assumed"
+      ],
+      "source": "govulncheck against the tree at GO_VERSION=1.26.2; toolchain/versions.env; the seven standard-library findings named in EV-079",
+      "reproduction": "govulncheck v1.8.0 over all six modules at GO_VERSION=1.26.2 reported seven reachable vulnerabilities, every one in the Go standard library: GO-2026-6090 and GO-2026-5856 (crypto/tls), GO-2026-6089 (net/http), GO-2026-5972 (encoding/asn1), GO-2026-5039 (net/textproto), GO-2026-5037 (crypto/x509) and GO-2026-4971 (net). None was attributed to a dependency. The workspace is not dependency-free: its only external Go dependency is github.com/lib/pq v1.10.9, marked // indirect in services/control-plane/go.mod and pinned in go.sum, and govulncheck reported nothing against it. The pinned toolchain was the vulnerable component, and the repository presented that pin as a verified baseline.",
+      "notes": "Closed by EV-079.\n\nThe bump to 1.26.8 was chosen by reading the findings rather than by taking the newest release. The highest of the seven is fixed in 1.26.6, 1.26.8 is the newest patch of the still-supported 1.26 line, and moving to 1.27 would have pulled in changes unrelated to closing them.\n\nThe part worth carrying forward is that the version lives in eight places, and the gate that keeps them in agreement checks only six. scripts/verify_toolchain.py compares all six go.mod directives against toolchain/versions.env; go.work is not covered. Leaving go.work at 1.26.2 while the modules moved to 1.26.8 does not degrade quietly - a workspace whose go directive is below a module's is rejected outright - but it was caught by building, not by any gate. A check that covers five of the six places a value appears has decided, without recording the decision, that the sixth does not matter.\n\nThe substantive finding is that the vulnerable component was the pin, while the gate that reads manifests was green throughout. scripts/verify_toolchain.py can confirm that lib/pq - the workspace's only external Go dependency, github.com/lib/pq v1.10.9, indirect - is an exact tagged pin, and it was passing while the toolchain carried seven reachable CVEs. The workspace is not dependency-free, and an earlier draft of EV-079 said it was; that was corrected before the record was committed, because the useful claim is not 'there was nothing to scan' but 'the thing that had the vulnerabilities is the one thing the manifest gate does not read'.\n\nExecuting the verification rather than assuming it is what confirmed the pin is live: `go version` reported go1.26.2 before the repin and go1.26.8 after, because GOTOOLCHAIN=auto fetched what the modules now require.",
+      "dependencies": [],
+      "evidence_ref": [
+        "EV-079"
+      ]
+    },
+    {
+      "id": "WI-178",
+      "phase": 2,
+      "title": "The Go vulnerability scan had never run: govulncheck requires a module root and CI invoked it at the workspace root",
+      "status": "COMPLETED",
+      "priority": "high",
+      "acceptance_criteria": [
+        "The scan runs against every module the workspace lists, so a module added to go.work is scanned without a workflow edit",
+        "The scan exits non-zero when a module reports a reachable vulnerability, and names the affected module so one run reports every problem rather than the first",
+        "A finding in one module does not stop the remaining modules from being scanned, since govulncheck exits non-zero on a finding and a set -e step would fail at the first one",
+        "A scanner that cannot run fails the step rather than being read as a clean result",
+        "The scan refuses to pass over an empty module list",
+        "The scanner is installed at an exact version rather than @latest, so the finding set cannot change under a commit that changed nothing",
+        "The step's ability to fail is proved by executing the committed run: block against a scanner that reports a finding, and by observing the proof fail when the step is broken on purpose"
+      ],
+      "source": "Running the workflow's own command locally; golang/govulncheck-action@v1.0.4 expands to `govulncheck -C ${work-dir} ...` with work-dir defaulting to '.'; EV-014's existing caveat that govulncheck was 'verified as configuration only, never as observed output'",
+      "reproduction": "From the repository root: `govulncheck -C . -format text ./contracts/go/...` exits 1 with 'govulncheck: no go.mod file'. The same binary exits 0 when pointed at a module directory. The refusal is about the working directory, not the pattern: GOWORK=off behaves identically, and with no pattern at all the tool reports 'no package patterns provided' and exits 2, so it never reached a resolution step. The repository has go.work at the root and deliberately no root go.mod, so the dependency-scan job's use of golang/govulncheck-action - which runs `govulncheck -C .` at the checkout root - failed this way on every run and scanned no Go code.",
+      "notes": "Closed by EV-080.\n\nWhat let this survive is worth more than the fix. A gate that always passes is caught the first time it fails to catch something. This one always FAILED, loudly, on every run, and that is why it lasted: a permanently red job reads as broken infrastructure, and one nobody triaged is indistinguishable from one that is merely flaky. Running the workflow's own command on the developer's machine is a far cheaper event than waiting for that job to be read.\n\nThe same shape is already in this repository's record three times - EV-064 and EV-065 reporting success without exercising anything, WI-171's guard living in a test file the shipped command never executes, and WI-175's package reporting 'ok' having skipped every test that covered the shipped behaviour. In each case the signal that would have caught it existed and was simply never observed.\n\nSo the gate is held to the standard it holds its tests to. scripts/prove_vuln_scan_gate.py executes the committed run: block verbatim against a fake scanner, and asserts five properties plus the premise itself - checked against the real govulncheck and the real tree, so that if the tool ever learns to resolve workspaces the now-redundant per-module structure is flagged. The negative control is what makes it evidence: with the step's failure branch replaced by `|| true`, three of the six properties failed and the script exited 1.\n\nBuilding that proof found two Windows-specific defects in the proof itself, both of which would have made it pass while exercising nothing: a text-mode write turned the fake scanner's shebang into `bash\\r` so it never ran, and an environment-variable-configured shim read an empty value because WSL drops custom variables when bash comes from WSL. Both are recorded in EV-080, because a gate that is green because it is not working is worse than no gate.\n\nThe three mutation gates that remain unwired - mutation_check_model.py, mutation_check_local_env.py and mutation_check_gate_g1.py - were checked during this item and all three pass locally. They stay unwired by the explicit decision recorded in WI-174. All three are slow (711s, 80s, 49s) and the go job carries timeout-minutes: 15, so wiring them is a budget decision and not a one-line edit. Recorded here so the fact is on the record rather than rediscovered.",
+      "dependencies": [],
+      "evidence_ref": [
+        "EV-080"
+      ]
     }
   ]
 }

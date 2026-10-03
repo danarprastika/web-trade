@@ -1,6 +1,6 @@
 module github.com/danarprastika/web-trade/components/risk-engine
 
-go 1.26.2
+go 1.26.8
 
 // The canonical contracts module is workspace-local. The version is a placeholder resolved
 // by go.work to ./contracts/go, and the local replace guarantees no tool can silently

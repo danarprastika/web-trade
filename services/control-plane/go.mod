@@ -1,6 +1,6 @@
 module github.com/danarprastika/web-trade/services/control-plane
 
-go 1.26.2
+go 1.26.8
 
 // The canonical contracts module is workspace-local. The version is a placeholder
 // resolved by go.work to ./contracts/go; the empty version number makes that explicit, and

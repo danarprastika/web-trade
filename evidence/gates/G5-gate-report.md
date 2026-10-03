@@ -115,7 +115,7 @@ Every path is relative to the repository root and every digest is over the exact
 | `services/control-plane/cmd/migrate/main_test.go` | `bcea65c930766306d42ba4a6a821fee88755721968fef50468f3216052b40b2a` | 17525 |
 | `services/control-plane/db/dbgen/model_registry.sql.go` | `861d197d54d606c089908dc22302531375adc195ed816198539646b552306878` | 33754 |
 | `services/control-plane/db/queries/model_registry.sql` | `91d164b872fb2bdae97bc11219453914e76341ca35aa43d92b916909d6bf5763` | 13907 |
-| `services/control-plane/go.mod` | `b9f11a0ba71bb93e27752d41734781c9dd2f390d82b3cd6796b48a826d8b652a` | 1258 |
+| `services/control-plane/go.mod` | `438acc5bb55da013fa9d68328e4704b5f6099c5e9fc8266d30bbfa4aa06ad879` | 1258 |
 | `services/control-plane/go.sum` | `90f48a605768fc3f5813e27cd5c63e854f07b8d1d92a5f6d7f9b9862e02ea445` | 155 |
 | `services/control-plane/integration/atomicity_test.go` | `45ec96cd8a1223d0025552ea39595bf7edf591fa65cb83e485e008b0f772e4d7` | 5260 |
 | `services/control-plane/integration/audit_test.go` | `d2f9a36f87c8eca70026a204076fb971ca04f598fae9b16ab52da0987b512d78` | 20147 |
