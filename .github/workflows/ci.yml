@@ -68,6 +68,19 @@ jobs:
       - name: Assert pinned toolchain and non-floating dependencies
         run: python scripts/verify_toolchain.py
 
+      - name: Install the CI suite's pinned test dependencies
+        # Without this step `python -m pytest` fails on the runner with "No module named
+        # pytest": actions/setup-python provides a clean interpreter and this job installed
+        # nothing. Every other job installs its own dependencies; this one did not, so the
+        # job failed in under a second and the fail-fast left all eleven other jobs skipped.
+        # A gate that cannot start must not be mistaken for a gate that passed.
+        #
+        # PyYAML is the load-bearing pin. tests/ci/test_ci_workflow.py reaches it through
+        # pytest.importorskip, so without it that module skips instead of failing and the
+        # 28 workflow-integrity tests plus the bash-syntax gate below stop running while CI
+        # still reports success.
+        run: python -m pip install --disable-pip-version-check -r tests/ci/requirements.txt
+
       - name: Assert the gate's own tests
         # A CI gate that has silently stopped rejecting bad input is worse than no gate,
         # because it is trusted. The negative cases live in tests/ci.

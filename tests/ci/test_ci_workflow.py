@@ -113,6 +113,83 @@ def test_project_brain_gate_runs_on_every_merge(workflow: dict) -> None:
     )
 
 
+def test_the_toolchain_job_installs_what_its_own_tests_need(workflow: dict) -> None:
+    """The toolchain job must install the CI suite's dependencies before running it.
+
+    This is not hypothetical. The job went straight from actions/setup-python to
+    `python -m pytest tests/ci` with no install step, so on the runner pytest was absent
+    and the step exited 1 in under a second. Because the workflow is fail-fast, that one
+    missing line left all eleven other jobs skipped, and the build reported failure for a
+    reason that had nothing to do with the code.
+
+    Order is part of the assertion: an install placed after the pytest call is the same
+    defect with extra lines. The requirements file is asserted to exist too, so deleting it
+    fails here rather than as an opaque pip error on the runner.
+    """
+    jobs = workflow.get("jobs") or {}
+    assert "toolchain" in jobs, "the toolchain job is missing, so this assertion is vacuous"
+    steps = yaml.safe_load(yaml.safe_dump(jobs["toolchain"]))["steps"]
+
+    runs = [
+        s.get("run", "") for s in steps if isinstance(s, dict) and s.get("run")
+    ]
+    assert runs, "the toolchain job has no run steps, so the assertion below is vacuous"
+
+    install_at = next(
+        (
+            i
+            for i, run in enumerate(runs)
+            if "pip install" in run and "tests/ci/requirements.txt" in run
+        ),
+        None,
+    )
+    assert install_at is not None, (
+        "the toolchain job never installs tests/ci/requirements.txt. actions/setup-python "
+        "gives a clean interpreter with no pytest, so `python -m pytest tests/ci` fails "
+        "with 'No module named pytest' and, because the workflow is fail-fast, every other "
+        "job is skipped. The gate must not be able to fail for want of its own dependency."
+    )
+
+    pytest_at = next(
+        (i for i, run in enumerate(runs) if "pytest" in run and "tests/ci" in run),
+        None,
+    )
+    assert pytest_at is not None, (
+        "the toolchain job no longer runs the CI suite's own tests, so the gates' negative "
+        "cases are unverified; a gate that has stopped rejecting bad input is trusted and "
+        "therefore worse than no gate"
+    )
+    assert install_at < pytest_at, (
+        f"the CI suite is tested at step {pytest_at} but its dependencies are installed at "
+        f"step {install_at}; the install must come first"
+    )
+
+
+def test_the_ci_suite_dependencies_are_pinned_not_floating(workflow: dict) -> None:
+    """tests/ci's requirements must be exact pins.
+
+    pytest.importorskip means a missing PyYAML makes tests/ci/test_ci_workflow.py skip
+    instead of fail, so an unpinned dependency that resolves differently on the runner is
+    the difference between 141 executed tests and 113 executed tests, reported the same
+    green either way.
+    """
+    requirements = REPO_ROOT / "tests" / "ci" / "requirements.txt"
+    assert requirements.is_file(), (
+        "tests/ci/requirements.txt is missing, so the toolchain job cannot install what the "
+        "suite needs and the job cannot start"
+    )
+    pins = [
+        line.strip()
+        for line in requirements.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    assert pins, "tests/ci/requirements.txt declares no dependencies, so nothing is installed"
+    unpinned = [p for p in pins if "==" not in p]
+    assert not unpinned, (
+        f"tests/ci/requirements.txt must pin every dependency exactly; unpinned: {unpinned}"
+    )
+
+
 def test_every_action_is_pinned_to_a_full_commit_sha(workflow: dict) -> None:
     uses_entries = _uses_entries(workflow)
     assert uses_entries, "no actions referenced; the test would otherwise pass vacuously"

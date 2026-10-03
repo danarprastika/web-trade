@@ -1,0 +1,18 @@
+# Test dependencies for the CI suite (tests/ci).
+#
+# Exact pins, never floating, for the same reason the toolchain gate rejects floating
+# dependency versions elsewhere: a gate that resolves a different version on the runner
+# than on the developer's machine is not the gate that was verified locally.
+#
+# pytest matches the pin already enforced in workers/research and workers/backtest, so the
+# whole repository asserts its gates with one pytest version and there is a single place to
+# change it.
+#
+# PyYAML is required by tests/ci/test_ci_workflow.py, which reaches it through
+# pytest.importorskip. That is a trap: with PyYAML absent the module SKIPS rather than
+# fails, so the 28 workflow-integrity tests and the bash-syntax gate quietly stop running
+# while CI still reports success. Pinning it here, and installing it in the toolchain job,
+# is what turns those 28 tests back into a real control.
+
+pytest==9.0.1
+PyYAML==6.0.3
