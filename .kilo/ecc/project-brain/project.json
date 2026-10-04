@@ -39,8 +39,22 @@
   },
   "product_boundary": {
     "description": "AI-native proprietary trading platform across crypto, FX, equities, commodities.",
-    "modes": ["research", "backtest", "simulation", "paper", "shadow", "live"],
-    "environments": ["dev", "test", "staging", "paper", "shadow", "live"],
+    "modes": [
+      "research",
+      "backtest",
+      "simulation",
+      "paper",
+      "shadow",
+      "live"
+    ],
+    "environments": [
+      "dev",
+      "test",
+      "staging",
+      "paper",
+      "shadow",
+      "live"
+    ],
     "authority_rule": "AI may propose. Deterministic controls decide. The OMS records the authoritative order state. Reconciliation resolves external truth. The ledger records financial facts.",
     "authority_rule_source": "docs/00_README.md",
     "live_default": "DISABLED — deny-by-default until G0-G11 pass with evidence (docs/25 §3.7, docs/11 G11)"
@@ -83,12 +97,18 @@
       "sql_migrations": 11
     },
     "gates_passed": [],
-    "gates_in_progress": ["G0"],
+    "gates_in_progress": [
+      "G0"
+    ],
     "working_tree": "clean",
     "deleted_code_history": {
       "deleted_in_commit": "be3ef5d (\"clear\")",
       "prior_stack": "Python FastAPI backend + Next.js frontend (sprints 1-4)",
-      "recoverable_from": ["7327bfd", "6f6bde0", "49e98c2"],
+      "recoverable_from": [
+        "7327bfd",
+        "6f6bde0",
+        "49e98c2"
+      ],
       "conformity": "NON-CONFORMANT with the authoritative blueprint: a Python authoritative backend violates ADR-001 (Go is the authoritative control plane) and ADR-003 (Python restricted to research/backtest). Not a restore target; may be mined for domain/naming reference only."
     }
   },
@@ -100,7 +120,7 @@
     "path": ".kilo/ecc/project-brain/requirements.md",
     "summary": "Execute docs/13 Phases 1-7 to reach G0-G10. Phase 8 (G11 live activation) is out of engineering scope and remains deny-by-default.",
     "first_delivery_boundary": "G0 + G1 (Phases 1-2: foundation and domain core)",
-    "current_work_item": "WI-193"
+    "current_work_item": "WI-195"
   },
   "team": {
     "model": "single-owner serial execution with bounded delegation",
