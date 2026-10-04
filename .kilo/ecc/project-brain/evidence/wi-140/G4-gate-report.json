@@ -1,0 +1,110 @@
+{
+  "gate": "G4",
+  "title": "Research",
+  "specification": "docs/11_EXECUTION_GATES.md section G4",
+  "verified_at": "2026-10-04T13:34:09Z",
+  "criteria": [
+    {
+      "id": "G4.1",
+      "name": "Datasets are versioned",
+      "status": "PASS",
+      "evidence": "content addressing holds in both directions: identical content fingerprints to sha256:bdb48d6a1 across two constructions, altered content to sha256:5520c315e, and the registry returns each dataset under its own fingerprint (2 registered)",
+      "mechanically_verified": true
+    },
+    {
+      "id": "G4.2",
+      "name": "Backtests are deterministic",
+      "status": "PASS",
+      "evidence": "two isolated interpreters produced identical results (sha256:27d1cf298) and identical artifact digests (sha256:edc2d19d8) for the same dataset, strategy and seed",
+      "mechanically_verified": true
+    },
+    {
+      "id": "G4.3",
+      "name": "Artifacts are reproducible",
+      "status": "PASS",
+      "evidence": "identical inputs yield digest sha256:475d586e8 across two builds, and altering the evaluation report changes it to sha256:b335b49e9, so the digest tracks content rather than being constant",
+      "mechanically_verified": true
+    },
+    {
+      "id": "G4.4",
+      "name": "No research worker has financial authority",
+      "status": "PASS",
+      "evidence": "workers/research/tests/test_authority_boundary.py: 6 passed in 1.71s - no network, database, process or credential capability in either worker, dependencies pinned exactly",
+      "mechanically_verified": true
+    }
+  ],
+  "mechanical_result": {
+    "total": 4,
+    "pass": 4,
+    "fail": 0
+  },
+  "required_report_fields": {
+    "reviewer": {
+      "value": null,
+      "status": "OUTSTANDING",
+      "reason": "No named human reviewer has attested this report (status OUTSTANDING). docs/11 requires every gate report to name its reviewer, and forbids partial completion."
+    },
+    "commit": {
+      "value": "8cbd4872a04fc2781c3b28123026360c9f83cf80",
+      "status": "OUTSTANDING",
+      "reason": "HEAD is 8cbd4872a04f but 10 path(s) are untracked or modified."
+    },
+    "timestamp": {
+      "value": "recorded above in verified_at",
+      "status": "PRESENT"
+    },
+    "command_output": {
+      "value": "per criterion",
+      "status": "PRESENT"
+    },
+    "binary_pass_fail": {
+      "value": "FAIL",
+      "status": "PRESENT",
+      "reason": "4 of 4 mechanical criteria PASS; reviewer field OUTSTANDING, commit field OUTSTANDING. docs/11: a gate is PASS only when every listed criterion is satisfied."
+    },
+    "evidence_digests": {
+      "value": "per criterion",
+      "status": "PRESENT"
+    }
+  },
+  "attested_payload": {
+    "gate": "G4",
+    "specification": "docs/11_EXECUTION_GATES.md section G4",
+    "criteria": [
+      {
+        "id": "G4.1",
+        "name": "Datasets are versioned",
+        "status": "PASS",
+        "evidence": "content addressing holds in both directions: identical content fingerprints to sha256:bdb48d6a1 across two constructions, altered content to sha256:5520c315e, and the registry returns each dataset under its own fingerprint (2 registered)",
+        "mechanically_verified": true
+      },
+      {
+        "id": "G4.2",
+        "name": "Backtests are deterministic",
+        "status": "PASS",
+        "evidence": "two isolated interpreters produced identical results (sha256:27d1cf298) and identical artifact digests (sha256:edc2d19d8) for the same dataset, strategy and seed",
+        "mechanically_verified": true
+      },
+      {
+        "id": "G4.3",
+        "name": "Artifacts are reproducible",
+        "status": "PASS",
+        "evidence": "identical inputs yield digest sha256:475d586e8 across two builds, and altering the evaluation report changes it to sha256:b335b49e9, so the digest tracks content rather than being constant",
+        "mechanically_verified": true
+      },
+      {
+        "id": "G4.4",
+        "name": "No research worker has financial authority",
+        "status": "PASS",
+        "evidence": "workers/research/tests/test_authority_boundary.py: 6 passed in 1.71s - no network, database, process or credential capability in either worker, dependencies pinned exactly",
+        "mechanically_verified": true
+      }
+    ]
+  },
+  "verdict": "FAIL",
+  "verdict_basis": [
+    "4 of 4 mechanical criteria PASS",
+    "reviewer field OUTSTANDING",
+    "commit field OUTSTANDING (HEAD 8cbd4872a04f, 10 untracked/modified)"
+  ]
+}

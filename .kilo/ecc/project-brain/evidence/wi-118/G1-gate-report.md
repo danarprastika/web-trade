@@ -1,14 +1,14 @@
 # G1 Gate Report - Domain Foundation
 
 Specification: docs/11_EXECUTION_GATES.md section G1
-Verified at: 2026-10-04T12:37:17Z
+Verified at: 2026-10-04T12:45:30Z
 **Verdict: FAIL**
 
 ## Why the verdict is FAIL
 
 - 9 of 9 mechanical criteria PASS
 - reviewer field OUTSTANDING
-- commit field OUTSTANDING (HEAD f24f78437a78, 8 untracked/modified path(s))
+- commit field PRESENT (HEAD 8cbd4872a04f, 0 untracked/modified path(s))
 
 docs/11_EXECUTION_GATES.md states that a gate is PASS only when every listed
 criterion is satisfied and that partial completion is FAIL, not a percentage. All nine
@@ -37,7 +37,7 @@ being certified, so the gate cannot be recorded as PASS.
 | Field | Value | Status |
 | --- | --- | --- |
 | reviewer | `None` | OUTSTANDING |
-| commit | `f24f78437a78b27de982a4d09c2f14d9c3a8eb2b` | OUTSTANDING |
+| commit | `8cbd4872a04fc2781c3b28123026360c9f83cf80` | PRESENT |
 | timestamp | `recorded above in verified_at` | PRESENT |
 | command_output | `per criterion` | PRESENT |
 | binary_pass_fail | `FAIL` | PRESENT |
@@ -46,8 +46,6 @@ being certified, so the gate cannot be recorded as PASS.
 ### Outstanding fields in detail
 
 **reviewer** - A named human reviewer cannot be produced by an automated agent. docs/11 requires the gate report to identify its reviewer, and the same package treats an unattested specification as not passed (G0.8 REQUIRES_HUMAN_ATTESTATION).
-
-**commit** - HEAD is f24f78437a78, but 8 path(s) in the working tree are untracked or modified, including the Go sources and migrations this gate covers. The referenced commit therefore does not contain the work being certified (work_committed=unknown).
 
 ## Evidence digests
 
