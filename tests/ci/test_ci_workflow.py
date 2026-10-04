@@ -461,22 +461,148 @@ def test_the_go_sast_leg_builds_every_workspace_module_rather_than_autobuilding_
     )
 
     build_run = steps[build_index].get("run") or ""
-    assert re.search(r"done\s+<\s*(?!<|\()\S", build_run), (
+    build_lines = [line.strip() for line in build_run.splitlines() if line.strip()]
+    loop_at = next(
+        (i for i, line in enumerate(build_lines) if re.search(r"done\s+<\s*(?!<|\()\S", line)),
+        None,
+    )
+    assert loop_at is not None, (
         "the build loop must read its module list from a plain file, not from a process "
         "substitution. Under `set -euo pipefail` a failure inside `done < <(...)` does not "
         "propagate to this step, and an empty list makes the loop body run zero times. Both are "
         "exit 0 with nothing built, so a resolution that silently returned nothing would leave the "
         "Go leg extracting nothing and reporting success"
     )
-    assert (
-        re.search(r"test\s+-s\s+modules\.txt", build_run)
-        or re.search(r"-eq\s+0", build_run)
-        or re.search(r"!\s*-s\s+", build_run)
-    ), (
+
+    # The empty-list refusal must be about the module list, and must come before the loop. Matching
+    # a bare `-eq 0` satisfied this from any unrelated `if [ "$i" -eq 0 ]` in the step, and
+    # ignoring order accepted a guard placed after `done <`, which builds first and refuses second -
+    # the opposite of what the guard is for.
+    #
+    # Tightened further after review showed two substitutions that still satisfied the looser form:
+    # a comment line mentioning the refusal in prose, and a conditional on a variable whose name
+    # merely contained "count" while the module count was assigned to a different one. So a guard
+    # has to be a real conditional, it has not be a comment, and it has to test either the module
+    # list itself or the exact variable this step derives that list's size into. Deriving the
+    # accepted variable from the step's own assignment is what makes the rule specific rather than
+    # a search for a suggestive word.
+    count_vars = {
+        match.group(1)
+        for line in build_lines
+        if (match := re.search(r"^([A-Za-z_]\w*)=\"?\$\(\s*wc\b.*\bmodules\.txt", line))
+    }
+
+    def _is_module_list_guard(line: str) -> bool:
+        if line.startswith("#") or not re.match(r"^if\b", line):
+            return False
+        if re.search(r"(-s\s+[\"']?\$\{?modules\.txt|\!\s*-s\b)", line):
+            return True
+        tested = re.findall(r"\$\{?(\w+)\}?", line)
+        return any(
+            re.search(rf"-e[ql]\s+0\b", line) and variable in count_vars for variable in tested
+        )
+
+    guard_at = next((i for i, line in enumerate(build_lines) if _is_module_list_guard(line)), None)
+    assert guard_at is not None, (
         "the build step must refuse an empty module list before building anything. An empty list "
         "is the same silent no-op the process-substitution form had, one level up: nothing is "
         "built and the step passes. The go, dependency-scan and integration jobs each refuse it, "
-        "and this step has to as well"
+        "and this step has to as well. Accepted forms are a conditional on `modules.txt` itself or "
+        f"on one of the module counts this step computes ({sorted(count_vars) or 'none found'})"
+    )
+    assert guard_at < loop_at, (
+        "the empty-list refusal is at line "
+        f"{guard_at + 1} of the step and the loop is at line {loop_at + 1}: the guard runs after "
+        "the modules are read, so the step builds first and refuses afterwards"
+    )
+
+
+def _mutate_sast_build_step(workflow: dict, replace: str | None) -> dict:
+    """A copy of the workflow with the SAST build step's run block replaced or reduced."""
+    mutated = copy.deepcopy(workflow)
+    for step in (mutated["jobs"]["sast"].get("steps") or []):
+        run = str(step.get("run", ""))
+        if "go work edit -json" in run:
+            step["run"] = replace if replace is not None else _without_module_list_guard(run)
+            return mutated
+    raise AssertionError("the mutation did not find the SAST build step, so it proved nothing")
+
+
+def _without_module_list_guard(run: str) -> str:
+    """The step with its `-eq 0` conditional and everything inside it removed.
+
+    Matched by structure rather than by exact text: find the conditional, then skip to its `fi`.
+    A pattern that had to reproduce the shipped line exactly would stop matching the first time
+    someone reworded the error message, and the mutation would silently become a no-op that passes
+    for the right reason.
+    """
+    kept: list[str] = []
+    inside = False
+    for line in run.splitlines():
+        stripped = line.strip()
+        if not inside and re.match(r"^if\b", stripped) and re.search(r"-e[ql]\s+0\b", stripped):
+            inside = True
+            continue
+        if inside:
+            if stripped == "fi":
+                inside = False
+            continue
+        kept.append(line)
+    assert not inside, "the conditional to remove was never closed, so the mutation was partial"
+    return "\n".join(kept)
+
+
+@pytest.mark.parametrize(
+    "replace, expected",
+    [
+        # The guard deleted outright.
+        (None, "must refuse an empty module list"),
+        # The guard replaced by prose that describes it. A comment is not a conditional, and the
+        # looser rule accepted this because the line contains both "count" and "-eq 0".
+        (
+            'set -euo pipefail\n# refuse when [ "$count" -eq 0 ] before building\n'
+            "go work edit -json | jq -r '.Use[].DiskPath' > modules.txt\n"
+            'count="$(wc -l < modules.txt)"\nwhile read -r m; do\n  go build "./$m/..."\n'
+            "done < modules.txt\n",
+            "must refuse an empty module list",
+        ),
+        # A conditional on a variable that merely sounds like the module count and is assigned
+        # nowhere. Under `set -u` this errors rather than refusing, and the step still builds
+        # nothing on an empty list - which is the defect the guard exists to prevent.
+        (
+            'set -euo pipefail\ngo work edit -json | jq -r \'.Use[].DiskPath\' > modules.txt\n'
+            'count="$(wc -l < modules.txt)"\nif [ "$module_count" -eq 0 ]; then\n  exit 1\nfi\n'
+            'while read -r m; do\n  go build "./$m/..."\ndone < modules.txt\n',
+            "must refuse an empty module list",
+        ),
+    ],
+    ids=["guard-removed", "guard-replaced-by-a-comment", "guard-on-an-unrelated-variable"],
+)
+def test_the_sast_empty_list_refusal_check_rejects_each_way_of_losing_it(
+    workflow: dict, replace: str | None, expected: str
+) -> None:
+    """Three ways the refusal can disappear while the check still reports success.
+
+    The first is obvious and needs no argument. The other two are why the accepted forms are
+    derived from the step rather than searched for: a comment line that describes the refusal in
+    prose, and a conditional on a differently named variable, both satisfied an earlier version of
+    this check that looked for the words "count" and "-eq 0" on the same line. All three were found
+    by running the check against the mutated step, not by reading it.
+
+    The guard is allowed to be a check on `modules.txt` directly or on the count this step
+    computes, and to sit before the loop; anything else is refused rather than reported as a
+    passing build.
+    """
+    mutated = _mutate_sast_build_step(workflow, replace)
+    try:
+        test_the_go_sast_leg_builds_every_workspace_module_rather_than_autobuilding_the_root(mutated)
+    except AssertionError as exc:
+        assert expected in str(exc), (
+            f"expected a failure naming {expected!r}, got:\n{exc}"
+        )
+        return
+    raise AssertionError(
+        "the mutated workflow passed the SAST build check; the check does not detect the defect"
     )
 
 
@@ -592,13 +718,95 @@ def test_the_secret_scan_runs_the_repositorys_own_config_and_can_still_fail(
             )
 
 
-def test_the_token_exception_neither_hides_a_credential_nor_excuses_the_proofs_own_value() -> None:
-    """The one value-shaped exception in .gitleaks.toml must be narrow, and coupled to the proof.
+def _allowlist_patterns() -> list[str]:
+    config = tomllib.loads(GITLEAKS_CONFIG.read_text(encoding="utf-8"))
+    return [
+        pattern
+        for entry in (config.get("allowlists") or [])
+        for pattern in (entry.get("regexes") or [])
+    ]
 
-    `.gitleaks.toml` excuses the shape of a single synthetic token, because two historical commits
-    carry it in whole and the scan covers history. That exception is value-shaped and this scanner
-    applies it everywhere - scoping it by commit, by path or by fingerprint was tried and each was
-    observed not to restrict anything, which is recorded in the config's own description.
+
+# Two realistic tokens, each assembled from fragments, each 36 base62 characters after the prefix.
+# The first is a random token with the prefix where a real one has it. The second carries the
+# excepted run at a displaced offset - 16 characters in, which is the position that matters, because
+# that is what dropping the prefix from the exception would excuse.
+#
+# Assembled rather than written out whole, for the same reason scripts/prove_secret_scan_gate.py
+# assembles its planted values: the scan covers history, so a PAT-shaped string written into this
+# file is a committed finding. It was - in 25bf81f and 5d84f14, which is why .gitleaks.toml now
+# carries a third exception and why this file is the second place this repository has committed one
+# while testing the secret scan. Splitting the literal here means the next reader who copies this
+# line does not commit a third.
+#
+# No fragment is longer than eleven characters for the same reason, and because of what the first
+# version of this pair cost: a single 20-character fragment on a line whose variable name contains
+# `token` is a `generic-api-key` finding, even though the reassembled value is deliberately not a
+# credential of any rule's shape. The scan does not care what a string means, only what a keyword
+# next to a value looks like. test_no_tracked_line_pairs_a_credential_keyword_with_a_long_value
+# below is that observation turned into a check that runs before the commit.
+_CONTROL_TOKEN = "ghp_" + "R7kQ2wZ9xR" + "4tB7vNc3dY" + "8sLtH2jF5g" + "U1aE0i"
+_CONTROL_TOKEN_DISPLACED = "ghp_" + "B4nW8qR6tY" + "1uE9iO7Kq2" + "Wz9XpL4m" + "pA7sD2fG"
+
+
+def _tokens_the_allowlist_would_excuse(patterns: list[str]) -> list[str]:
+    """Which of the control tokens these patterns would hide, if any.
+
+    The patterns are combined as text. Compiling them first and interpolating the compiled objects
+    yields the literal string "re.compile('ghp_…')", which matches nothing - so a check built that
+    way would pass for a config that excuses every token in the world. Caught by running this
+    against deliberately widened exceptions, which is why the widenings are enumerated in the control
+    below rather than assumed unreachable.
+
+    Every pattern is passed in, not only those mentioning `ghp_`. Filtering to the prefix was a hole
+    of exactly the kind this check exists to close: dropping the prefix is a measured widening,
+    because the exception then excuses the run at any of the 25 offsets a 12-character run could
+    occupy rather than only at offset zero, and a filter on "ghp_" made that mutation invisible to
+    every check in the repository.
+    """
+    if not patterns:
+        return []
+    try:
+        combined = re.compile("|".join(f"(?:{pattern})" for pattern in patterns))
+    except re.error as exc:  # pragma: no cover - a config that cannot compile is the failure itself
+        raise AssertionError(f"an allowlist pattern does not compile, so it cannot be checked: {exc}")
+    return [name for name, token in _CONTROL_TOKENS if combined.search(token)]
+
+
+_CONTROL_TOKENS = (
+    ("a realistic random token", _CONTROL_TOKEN),
+    ("the excepted run at a displaced offset", _CONTROL_TOKEN_DISPLACED),
+)
+
+
+def test_the_control_tokens_are_themselves_realistic() -> None:
+    """Guards the controls, so a later edit cannot quietly neuter the check above.
+
+    A control that is not a well-formed token matches nothing and reports success whatever the
+    exception is - which is how the earlier version of this check became unbreakable. Asserted
+    rather than assumed, including the displaced run's position, since that position is the whole
+    reason the second token exists.
+    """
+    for name, token in _CONTROL_TOKENS:
+        body = token.removeprefix("ghp_")
+        assert token.startswith("ghp_") and len(body) == 36, (
+            f"{name} is not a well-formed ghp_ token ({len(body)} characters after the prefix), so "
+            "it cannot fail the narrowing check whatever the exception matches"
+        )
+        assert re.fullmatch(r"[0-9A-Za-z]{36}", body), f"{name} carries a non-base62 character"
+    assert _CONTROL_TOKEN_DISPLACED.find("7Kq2Wz9XpL4m") > 4, (
+        "the displaced control no longer carries the excepted run at a displaced offset, so it "
+        "cannot detect an exception that drops the ghp_ prefix"
+    )
+
+
+def test_the_token_exception_neither_hides_a_credential_nor_excuses_the_proofs_own_value() -> None:
+    """The value-shaped exception in .gitleaks.toml must be narrow, and coupled to the proof.
+
+    `.gitleaks.toml` excuses the shape of single synthetic tokens, because pushed commits carry them
+    in whole and the scan covers history. Those exceptions are value-shaped and this scanner applies
+    them everywhere - scoping by commit, by path or by fingerprint was tried and each was observed
+    not to restrict anything, which is recorded in the config's own descriptions.
 
     So the proof cannot plant the same shape. If it did, the allowlist would suppress the planted
     value and `scenario_planted_token_fails` would pass without the scan looking at all - a proof
@@ -607,34 +815,19 @@ def test_the_token_exception_neither_hides_a_credential_nor_excuses_the_proofs_o
     Both halves are checked here rather than asserted in prose, because both fail silently: a
     widened exception hides a real credential, and a colliding planted value fakes a passing proof.
     """
-    config = tomllib.loads(GITLEAKS_CONFIG.read_text(encoding="utf-8"))
-    patterns = [
-        pattern
-        for entry in (config.get("allowlists") or [])
-        for pattern in (entry.get("regexes") or [])
-    ]
-    # Combine the patterns as text. Compiling them first and interpolating the compiled objects
-    # yields the literal string "re.compile('ghp_…')", which matches nothing - so the assertion
-    # below would pass for a config that excuses every token in the world. Caught by running this
-    # against a deliberately widened exception, which is the only reason it is not still there.
-    token_patterns = [pattern for pattern in patterns if "ghp_" in pattern]
-
-    assert token_patterns, (
+    patterns = _allowlist_patterns()
+    assert [pattern for pattern in patterns if "ghp_" in pattern], (
         "expected .gitleaks.toml to carry a ghp_ exception, since the historical commits contain a "
         "synthetic token in whole and the scan covers history"
     )
-    combined = re.compile("|".join(f"(?:{p})" for p in token_patterns))
 
-    # A realistic token: the ghp_ prefix plus 36 random base62 characters. It carries the prefix on
-    # purpose. A control without it cannot fail this assertion whatever the exception matches,
-    # because every one of these patterns is anchored on the prefix - which is exactly the mistake
-    # that made an earlier version of this check unbreakable.
-    plausible = "ghp_7Kq2Wz9XpL4mBv6NcYd8Rt3HsJ5Fg1UaE0Zi"
-    assert len(plausible) == 4 + 36, "the control token must be a realistic token length"
-    assert not combined.search(plausible), (
-        "the token exception matches a realistic random token, so it is not narrow: a real GitHub "
-        "token committed anywhere in this repository would be excused. The pattern must describe "
-        "the one synthetic value's shape, which no random token has."
+    hidden = _tokens_the_allowlist_would_excuse(patterns)
+    assert not hidden, (
+        "the shipped allowlist patterns match " + ", ".join(hidden) + ". A pattern that matches a "
+        "realistic random token is not narrow: a real GitHub token committed anywhere in this "
+        "repository would be excused. The patterns must describe the synthetic values' shape and "
+        "stay anchored to the `ghp_` prefix - unanchored, a 12-character run is excused at any of "
+        "the 25 offsets it could occupy, which is a measurable widening rather than a cosmetic one."
     )
 
     spec = importlib.util.spec_from_file_location(
@@ -649,10 +842,253 @@ def test_the_token_exception_neither_hides_a_credential_nor_excuses_the_proofs_o
         "the proof's planted token is not a well-formed ghp_ value, so the first scenario is not "
         "testing the github-pat rule at all"
     )
-    assert not combined.search(module.PLANTED_TOKEN), (
+    assert not _tokens_the_allowlist_would_excuse([module.PLANTED_TOKEN]), (
         "the proof plants a token that .gitleaks.toml excuses. The first scenario would then pass "
         "because the allowlist suppressed it, not because the scan detected anything. Plant a "
         "differently shaped synthetic token."
+    )
+
+
+@pytest.mark.parametrize(
+    "widened",
+    [
+        r"ghp_[0-9A-Za-z]{36}",
+        r"ghp_[0-9A-Za-z]{12}",
+        r".*",
+        # The one this repository could not see: same characters, prefix dropped. Unanchored, it
+        # excuses the run at any offset, which is a real widening rather than a cosmetic edit.
+        r"7Kq2Wz9XpL4m",
+    ],
+    ids=[
+        "any-github-token",
+        "any-github-token-prefix",
+        "anything-at-all",
+        "prefix-dropped",
+    ],
+)
+def test_the_token_exception_check_rejects_each_way_of_widening_it(widened: str) -> None:
+    """The narrowing check has to fail for every widening it can detect, and its blind spot is
+    stated rather than left to be discovered.
+
+    An earlier version of this check filtered the config's patterns to those containing `ghp_`
+    before testing them, which meant the prefix-dropped mutation was never even evaluated. That is
+    the failure mode this parameterisation exists to prevent, and it is invisible from the passing
+    case - the shipped config is narrow, so a check that cannot see a widening still reports the
+    right answer.
+
+    Not covered, and named so the limit is visible: a pattern that lengthens the run by a few
+    characters, such as `ghp_<run>[A-Za-z0-9]{4}`. No control token can detect it, because every
+    token it would excuse is also excused by the narrower shipped pattern - they differ only in
+    tokens that are already excepted. It widens the exception by 62^4 values out of 62^36, which
+    is real and is why the entry's description fixes the run's length in prose for the next reader
+    rather than relying on this check to notice.
+    """
+    assert _tokens_the_allowlist_would_excuse([widened]), (
+        f"the pattern {widened!r} would excuse a realistic random token, and the narrowing check "
+        "accepted it"
+    )
+
+
+def test_the_token_exception_check_accepts_the_shipped_patterns() -> None:
+    """The positive control, because a check that rejects everything rejects a correct config too.
+
+    Asserted against the config as committed rather than against a hand-written narrow pattern: the
+    value of this pair is that the same function is exercised on the real input and on the broken
+    ones, so the passing case cannot come from a pattern that was never tested.
+    """
+    patterns = _allowlist_patterns()
+    assert patterns, "the config declares no allowlist regexes, so this check would prove nothing"
+    assert _tokens_the_allowlist_would_excuse(patterns) == []
+
+
+# The patterns that match a credential-shaped value, as opposed to the field-name exception, which
+# is about idempotency keys. Deliberately unanchored per token: the point is to notice a literal
+# written into a file, wherever it appears in it.
+_CREDENTIAL_SHAPES = (
+    re.compile(r"gh[pousr]_[0-9A-Za-z]{36}"),
+    re.compile(r"github_pat_[0-9A-Za-z_]{22,}"),
+    re.compile(r"AKIA[0-9A-Z]{16}"),
+)
+
+
+def test_no_file_in_the_working_tree_holds_a_contiguous_credential_shaped_literal() -> None:
+    """The failure this change set exists to repair, caught BEFORE the commit that causes it.
+
+    Both times a whole GitHub-token-shaped string was written into this repository's own source,
+    it was found by a scan of committed history - after the commit, and in one case after the push.
+    `gitleaks detect` cannot see a file that has not been committed, and the fifth property of
+    scripts/prove_secret_scan_gate.py inherits that limit exactly, so nothing in this repository
+    fails before the commit. This assertion fails before it.
+
+    It searches the working tree rather than the history because that is the only place a
+    re-constituted literal can still be removed. The three values in this repository are all
+    assembled from fragments at run time; what this rules out is an editor, a constant-folding pass
+    or an agent tidying the line and writing the literal back out, which is the obvious way the
+    repair here is undone.
+
+    The fragments live in three files - this one, scripts/prove_secret_scan_gate.py and
+    scripts/inspect_secret_scan_hit.py - and .gitleaks.toml's patterns are matched by
+    construction. A hit in any other file, or in one of those three as a contiguous run, is a real
+    finding rather than a tolerated exception, so none is allowed here.
+
+    The candidates come from git rather than a filesystem walk: this is about files that could be
+    committed, so `git ls-files -co --exclude-standard` is both the right set and fast enough to run
+    on every test pass - a rglob over the working tree spends its time in node_modules and virtual
+    environments, which are ignored and cannot be committed.
+    """
+    listed = subprocess.run(
+        ["git", "ls-files", "-co", "--exclude-standard", "-z"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        check=True,
+    )
+    candidates = [REPO_ROOT / name for name in listed.stdout.decode("utf-8").split("\0") if name]
+
+    offenders: list[str] = []
+    for path in candidates:
+        if not path.is_file():
+            continue
+        # .gitleaks.toml is exempt, and not as a convenience: gitleaks never reports a finding in a
+        # file with that name, whatever --config points at, so the scanner cannot see it either way.
+        # The file quotes AWS's published documentation example key in the prose explaining why its
+        # first exception excludes uppercase values - which is the one real credential-shaped
+        # literal in this tree, and is not a credential. The carve-out is stated in the config's own
+        # header rather than left for a reader to infer from this test.
+        if path == GITLEAKS_CONFIG:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        for shape in _CREDENTIAL_SHAPES:
+            match = shape.search(text)
+            if match:
+                offenders.append(
+                    f"{path.relative_to(REPO_ROOT)}: {shape.pattern} at offset {match.start()}"
+                )
+                break
+    assert not offenders, (
+        "a contiguous credential-shaped literal is present in the working tree. The scan covers "
+        "committed history, so committing this turns the finding from fixable-in-place into an "
+        "allowlist entry that has to be written around. Assemble the value from fragments, as "
+        "scripts/prove_secret_scan_gate.py does. Offenders:\n  " + "\n  ".join(offenders)
+    )
+
+
+# gitleaks' generic-api-key rule is not a credential shape. It pairs a KEYWORD with an adjacent
+# VALUE, and reports the pair when the value looks random enough - which is how a 23-character
+# fragment next to a variable named PLANTED_CREDENTIAL_VALUE was a committed finding in 4907b8e,
+# the very commit that added the fifth property meant to catch that class of mistake.
+#
+# The keyword list below is gitleaks' own, kept as a substring rather than a word-boundary match,
+# because the rule matches inside identifiers: `\bcredential\b` does not match
+# `PLANTED_CREDENTIAL_VALUE`, and a check written that way would pass on the exact line that
+# failed. The threshold is measured, not guessed: over this repository's tracked files, at 16 and
+# 18 characters the shape also matches four lines that gitleaks reports under github-pat because
+# the fragment is preceded by ghp_, and at 24 it matches nothing at all while missing nothing.
+# Twenty is the lowest value that isolates the real finding.
+#
+# Entropy is the three-class test rather than Shannon entropy: the class mix (an upper, a lower and
+# a digit) is what makes a run look accidental rather than like an identifier or a path, and it is
+# decidable without choosing a threshold that would need tuning against this repository's own data.
+_KEYWORD_ADJACENT = re.compile(
+    r"(?i)(credential|secret|token|api[_-]?key|passw|auth|access[_-]?key|client)"
+)
+_LONG_MIXED_RUN = re.compile(r"[0-9A-Za-z]{20,}")
+
+
+def _keyword_adjacent_value_lines(text: str) -> list[tuple[int, str]]:
+    """Lines where a credential-ish keyword shares a line with a long mixed-case alphanumeric run.
+
+    Returned as `(line_number, line)` so a failure names the line rather than only a count. The
+    keyword may appear anywhere on the line, before or after the value, and the run need not be
+    quoted: gitleaks' rule reads the pair out of the line, so requiring quotes here would be a
+    narrower check than the one it is standing in for.
+    """
+    hits: list[tuple[int, str]] = []
+    for lineno, line in enumerate(text.splitlines(), 1):
+        if not _KEYWORD_ADJACENT.search(line):
+            continue
+        for run in _LONG_MIXED_RUN.findall(line):
+            if any(c.isupper() for c in run) and any(c.islower() for c in run) and any(
+                c.isdigit() for c in run
+            ):
+                hits.append((lineno, line.strip()[:160]))
+                break
+    return hits
+
+
+def test_no_tracked_line_pairs_a_credential_keyword_with_a_long_value() -> None:
+    """The check above is necessary and, measured on this repository, not sufficient.
+
+    A contiguous-credential shape is one way to write a secret into source. The other way is the
+    one gitleaks actually reported against this repository's own history: a value that is not any
+    rule's shape, sitting next to a word that makes the rule fire. Committing that costs a history
+    rewrite or a third allowlist entry, and unlike the contiguous shape it is easy to reintroduce,
+    because nothing about it looks like a secret while reading the line.
+
+    So the same files are checked for the pair the rule is built from: a credential-ish keyword and
+    a long mixed-case run on one line. Split the value into fragments of at most eleven characters
+    - which is what every value in this repository is now assembled from - or rename the binding so
+    the keyword is not next to it. The committed fragments themselves satisfy this: the longest run
+    left on any line here is the twelve-character excepted run asserted by
+    test_the_control_tokens_are_themselves_realistic.
+    """
+    listed = subprocess.run(
+        ["git", "ls-files", "-co", "--exclude-standard", "-z"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        check=True,
+    )
+    offenders: list[str] = []
+    for name in listed.stdout.decode("utf-8").split("\0"):
+        if not name or name == ".gitleaks.toml":
+            continue
+        path = REPO_ROOT / name
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        offenders.extend(
+            f"{name}:{lineno}: {line}" for lineno, line in _keyword_adjacent_value_lines(text)
+        )
+    assert not offenders, (
+        "a tracked line pairs a credential keyword with a long high-entropy value. gitleaks "
+        "reports that pair as generic-api-key even when the value is not a credential of any "
+        "shape, so committing it is a finding in history that cannot be removed by editing the "
+        "file. Split the value into fragments of at most eleven characters, or rename the binding. "
+        "Offenders:\n  " + "\n  ".join(offenders)
+    )
+
+
+def test_the_keyword_adjacent_value_check_would_reject_the_line_it_was_written_for() -> None:
+    """A check with no control is a check that has never rejected anything.
+
+    The positive control is the shape this check exists because of: a fragment of the length and
+    class mix that gitleaks reported, on a line whose binding contains the keyword. It is rebuilt at
+    run time from two shorter literals rather than written out whole, so this file still holds no
+    contiguous run long enough to trip the check it defines - and neither is the 18-character
+    fragment below, which is under the threshold by four characters and so is not itself a finding.
+
+    The negative control is the committed fragments: eleven-character pieces under a keyword, which
+    must not match. Without it the check could be satisfied by refusing every keyword on the
+    repository's only real candidates, and the failure it was added for would be back.
+    """
+    planted = "_SOME_CREDENTIAL" + ' = "' + "x7Kd93mzQpL2vRt8Yw" + "Za5Nc" + '"'
+    assert not _keyword_adjacent_value_lines(
+        "_CONTROL_TOKEN" + ' = "' + "R7kQ2wZ9xR" + '"'
+    ), (
+        "the negative control matches: an eleven-character fragment under a keyword must be "
+        "allowed, otherwise every control token in this file is a finding and the rule is blind "
+        "in the other direction"
+    )
+    hits = _keyword_adjacent_value_lines(planted)
+    assert hits, (
+        "the positive control no longer matches. Either the threshold was raised past the shape "
+        "that produced the finding, or the keyword list no longer matches inside an identifier - "
+        "gitleaks' rule matches substrings, so a word-boundary pattern would do exactly this"
     )
 
 
@@ -1325,12 +1761,79 @@ def test_bash_gate_script_passes_a_workflow_with_one_valid_run_block(
 
 # --- Worker typecheck invocation (WI-192) --------------------------------------
 
-# A mypy invocation, with the working directory it establishes either through a `cd` in the same
-# command or through the step's own `working-directory:`. The closing paren of a subshell form is
-# excluded from the argument span so `(cd X && python -m mypy src)` yields the target `src`.
-_MYPY_INVOCATION = re.compile(
-    r"(?:\(\s*cd\s+(?P<dir>[^\s&;)]+)\s*&&\s*)?python\s+-m\s+mypy\b(?P<args>[^\n)]*)"
+# A mypy invocation, and the ways bash lets a run: block establish the directory it runs in.
+# `_MYPY_INVOCATION` matches the command only; the `cd` forms are matched separately so that a bare
+# `cd X` line, which governs every later line in the block, is not mistaken for a per-command
+# prefix. The argument span stops at a closing paren so `(cd X && python -m mypy src)` yields the
+# target `src`.
+#
+# All three spellings are recognised because a workflow rewrite will produce any of them:
+#   cd X                                - persists for the rest of the block
+#   (cd X && cmd)                       - scoped to the subshell
+#   cd X && cmd                         - persists, and also carries the command
+# An earlier version knew only the second and reported the first as broken; a later one knew the
+# first and reported the third as running at the root. Both directions are false positives on
+# correct bash, which is the failure that teaches a reader to ignore a rule.
+_MYPY_INVOCATION = re.compile(r"python\s+-m\s+mypy\b(?P<args>[^\n)]*)")
+_CD_ONLY = re.compile(r"^cd\s+(?P<dir>[^\s&;)]+)$")
+_SUBSHELL_CD = re.compile(r"^\(\s*cd\s+(?P<dir>[^\s&;)]+)\s*&&\s*(?P<rest>.+)\)$")
+_INLINE_CD = re.compile(r"^cd\s+(?P<dir>[^\s&;)]+)\s*&&\s*(?P<rest>.+)$")
+# Flags that take the following argument as their value. A value read as a target is a path that
+# does not exist, so the rule reports a file that was never meant to be one. `--config-file` was
+# the only one handled at first; the rest were latent because no invocation used them, and a rule
+# that breaks the first correct use of `-p` is the false-positive direction again.
+_MYPY_VALUE_FLAGS = frozenset(
+    {
+        "--config-file",
+        "--python-executable",
+        "--custom-typeshed-dir",
+        "--exclude",
+        "--package",
+        "-p",
+    }
 )
+
+
+def _mypy_targets(args: list[str]) -> list[str]:
+    """The positional arguments of a mypy command line, excluding values consumed by flags.
+
+    Both spellings of a valued flag are handled: `--config-file path` and `--config-file=path`. The
+    `=` form is recognised by the leading `-` test below and never mistaken for a target, which is
+    the only reason it needs no special case.
+    """
+    targets: list[str] = []
+    skip_next = False
+    for arg in args:
+        if skip_next:
+            skip_next = False
+            continue
+        if arg.startswith("-"):
+            skip_next = arg in _MYPY_VALUE_FLAGS
+            continue
+        targets.append(arg)
+    return targets
+
+
+def _cd_chain(rest: str) -> tuple[str, str]:
+    """Resolve leading `cd X &&` hops in a command, as bash does.
+
+    `(cd workers/backtest && cd src && python -m mypy .)` runs in workers/backtest/src, not in
+    workers/backtest. Reading only the first hop resolved it one level too shallow and reported no
+    problem at all - the under-reporting direction, which is the worse one for a rule whose job is
+    to catch the misconfiguration.
+    """
+    directory: str | None = None
+    remaining = rest.strip()
+    while True:
+        hop = _CD_ONLY.match(remaining) or _INLINE_CD.match(remaining)
+        if hop is None:
+            break
+        directory = hop.group("dir")
+        if hop.re is _CD_ONLY:
+            remaining = ""
+            break
+        remaining = hop.group("rest").strip()
+    return directory or "", remaining
 
 
 def _mypy_invocations(workflow: dict) -> list[tuple[str, Path, list[str]]]:
@@ -1347,25 +1850,71 @@ def _mypy_invocations(workflow: dict) -> list[tuple[str, Path, list[str]]]:
             if "mypy" not in script:
                 continue
             step_dir = str(step.get("working-directory") or "")
+            # `cd` is tracked as bash means it: a bare `cd X` line changes the directory for every
+            # later line in the block until another `cd` says otherwise, and a `(cd X && cmd)` is a
+            # subshell that changes it for its own command only. Recognising only the second form
+            # reported a working two-line invocation as broken - a false positive on correct bash,
+            # which is the failure that teaches a reader to ignore a rule. Carrying `cd` across the
+            # other lines in between matters for the same reason: `cd X`, then an unrelated command,
+            # then mypy still runs in X, and forgetting that would under-report rather than
+            # over-report, which is worse here - the rule exists to catch the misconfiguration.
+            carried: str | None = None
             for line in script.splitlines():
-                code = line.split("#", 1)[0]
-                match = _MYPY_INVOCATION.search(code)
+                code = line.split("#", 1)[0].strip()
+                if not code:
+                    continue
+                subshell = _SUBSHELL_CD.match(code)
+                inline = _INLINE_CD.match(code)
+                cd_only = _CD_ONLY.match(code)
+                if subshell:
+                    # Scoped to the subshell: the enclosing directory is unchanged. Any further
+                    # `cd` inside it is resolved, because bash applies those too.
+                    this_cd, rest = _cd_chain(subshell.group("rest"))
+                    this_cd = _join(subshell.group("dir"), this_cd)
+                elif cd_only:
+                    carried = cd_only.group(1)
+                    continue
+                elif inline:
+                    # Both a carry-setter and a command carrier: the directory holds for the rest of
+                    # the block, and the command on this line runs in it.
+                    carried = _join(inline.group("dir"), "")
+                    this_cd, rest = _cd_chain(inline.group("rest"))
+                    this_cd = _join(inline.group("dir"), this_cd)
+                else:
+                    this_cd, rest = "", code
+
+                match = _MYPY_INVOCATION.search(rest)
                 if not match:
                     continue
+
                 cwd = REPO_ROOT
-                for part in (step_dir, match.group("dir") or ""):
+                for part in (step_dir, this_cd or carried or ""):
                     if part:
                         cwd = cwd / part
-                args = match.group("args").split()
-                # `--config-file X` takes a path as its value; reading that value as a target
-                # would send the config-file search up from the wrong directory.
-                targets = [
-                    arg
-                    for index, arg in enumerate(args)
-                    if not arg.startswith("-") and (index == 0 or args[index - 1] != "--config-file")
-                ]
-                found.append((f"job {job_name!r}: {line.strip()}", cwd, targets))
+                found.append(
+                    (f"job {job_name!r}: {line.strip()}", cwd, _mypy_targets(match.group("args").split()))
+                )
     return found
+
+
+def _join(first: str, second: str) -> str:
+    return f"{first}/{second}" if second else first
+
+
+def _describe_directory(cwd: Path) -> str:
+    """How to name a working directory in a message, including one outside the repository.
+
+    `Path.relative_to` raises for a path the repository is not a prefix of, so a block that does
+    `cd /tmp` or `cd ../..` past the root turned a reportable problem into a ValueError from inside
+    the checker - an opaque test failure that reads as a bug in the test rather than a defect in the
+    workflow. Fails loud either way; this makes it legible.
+    """
+    if cwd == REPO_ROOT:
+        return "the repository root"
+    try:
+        return str(cwd.relative_to(REPO_ROOT))
+    except ValueError:
+        return f"{cwd} (outside the repository)"
 
 
 def _worker_mypy_problems(workflow: dict) -> list[str]:
@@ -1391,47 +1940,52 @@ def _worker_mypy_problems(workflow: dict) -> list[str]:
             problems.append(f"{where}: no path to check was passed to mypy")
             continue
 
+        described = _describe_directory(cwd)
         for target in targets:
             if not (cwd / target).is_dir():
                 problems.append(
                     f"{where}: {target!r} does not exist relative to the working directory it runs "
-                    f"in, {cwd.relative_to(REPO_ROOT) if cwd != REPO_ROOT else 'the repository root'}"
+                    f"in, {described}"
                 )
-
-        # The configuration mypy will read is the nearest pyproject.toml above the target that
-        # declares one. An explicit --config-file would win over that, but the relativity problem
-        # below is a property of the working directory either way, so it is checked regardless.
-        config = None
-        for candidate in [cwd / targets[0], *((cwd / targets[0]).parents)]:
-            pyproject = candidate / "pyproject.toml"
-            if not pyproject.is_file():
                 continue
-            try:
-                data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-            except (tomllib.TOMLDecodeError, UnicodeDecodeError):
-                continue
-            if "mypy" in data.get("tool", {}):
-                config = pyproject
-                break
 
-        if config is None:
-            problems.append(
-                f"{where}: no pyproject.toml declaring [tool.mypy] was found above {target!r}, so "
-                f"there is no strict configuration for this worker to be checked against"
-            )
-            continue
+            # The configuration mypy will read is the nearest pyproject.toml above THIS target that
+            # declares one. Resolving it from the first target alone reported
+            # `mypy workers/research/src workers/backtest/src` as clean, because the research worker
+            # declares no mypy_path and the backtest worker's unresolved entry was never consulted -
+            # which is the original defect, in the one form a reader is most likely to write.
+            config = None
+            for candidate in [cwd / target, *((cwd / target).parents)]:
+                pyproject = candidate / "pyproject.toml"
+                if not pyproject.is_file():
+                    continue
+                try:
+                    data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+                except (tomllib.TOMLDecodeError, UnicodeDecodeError):
+                    continue
+                if "mypy" in data.get("tool", {}):
+                    config = pyproject
+                    break
 
-        mypy_path = tomllib.loads(config.read_text(encoding="utf-8")).get("tool", {}).get("mypy", {})
-        for entry in mypy_path.get("mypy_path") or []:
-            if not (cwd / entry).is_dir():
+            if config is None:
                 problems.append(
-                    f"{where}: mypy reads {config.relative_to(REPO_ROOT)}, which declares "
-                    f"mypy_path {entry!r}, and mypy resolves mypy_path relative to the current "
-                    f"working directory - which for this invocation is "
-                    f"{cwd.relative_to(REPO_ROOT) if cwd != REPO_ROOT else 'the repository root'}, "
-                    f"where {entry!r} does not exist. Invoke mypy from the directory holding that "
-                    f"pyproject.toml."
+                    f"{where}: no pyproject.toml declaring [tool.mypy] was found above {target!r}, "
+                    f"so there is no strict configuration for this worker to be checked against"
                 )
+                continue
+
+            mypy_section = tomllib.loads(config.read_text(encoding="utf-8")).get("tool", {}).get(
+                "mypy", {}
+            )
+            for entry in mypy_section.get("mypy_path") or []:
+                if not (cwd / entry).is_dir():
+                    problems.append(
+                        f"{where}: mypy reads {config.relative_to(REPO_ROOT)}, which declares "
+                        f"mypy_path {entry!r}, and mypy resolves mypy_path relative to the current "
+                        f"working directory - which for this invocation is {described}, where "
+                        f"{entry!r} does not exist. Invoke mypy from the directory holding that "
+                        f"pyproject.toml."
+                    )
     return problems
 
 
@@ -1486,20 +2040,71 @@ def test_every_worker_typecheck_runs_where_its_configured_paths_resolve(workflow
             "set -euo pipefail\npython -m ruff check workers/research workers/backtest\n",
             "no mypy invocation was found",
         ),
+        (
+            "set -euo pipefail\npython -m mypy workers/research/src workers/backtest/src\n",
+            "mypy_path '../research/src'",
+        ),
+        (
+            "set -euo pipefail\ncd workers/backtest/src\necho checking\npython -m mypy .\n",
+            "mypy_path 'src'",
+        ),
+        # A flag that takes a value, invoked from the wrong directory. The value must not be read as
+        # a target - which is asserted positively below - while `workers/backtest/src`, which is,
+        # still has to be checked against the configuration above it.
+        (
+            "set -euo pipefail\npython -m mypy -p webtrade_backtest workers/backtest/src\n",
+            "mypy_path 'src'",
+        ),
+        # Two `cd` hops inside one subshell. bash runs in workers/backtest/src, where `src` does not
+        # exist; reading only the first hop resolved it one level too shallow and reported nothing at
+        # all - the under-reporting direction, which is the worse one for this rule.
+        (
+            "set -euo pipefail\n(cd workers/backtest && cd src && python -m mypy .)\n",
+            "mypy_path 'src'",
+        ),
     ],
-    ids=["invoked-from-the-root", "cd-into-the-wrong-directory", "worker-removed-entirely"],
+    ids=[
+        "invoked-from-the-root",
+        "cd-into-the-wrong-directory",
+        "worker-removed-entirely",
+        "both-workers-in-one-root-relative-invocation",
+        "cd-with-an-unrelated-line-between-it-and-mypy",
+        "flag-that-takes-a-value",
+        "two-cd-hops-in-one-subshell",
+    ],
 )
 def test_the_worker_typecheck_check_rejects_each_way_of_getting_it_wrong(
     workflow: dict, replacement: str, expected: str
 ) -> None:
-    """Three controls, because a rule that only fires on one shape proves nothing.
+    """Seven controls, because a rule that only fires on one shape proves nothing.
 
-    The first restores the original wiring exactly: both invocations from the repository root, which
-    is what shipped and what failed. The second keeps a `cd` but descends one level too far, into
-    the source directory rather than the worker root - which a rule that only asked whether a `cd`
-    was present would wave through, and which really does fail, because `src` then means
-    `workers/backtest/src/src`. The third deletes the invocation entirely, which must fail closed
-    rather than report a clean result having checked nothing.
+    Each id says which spelling or mistake it stands for, and each was measured rather than
+    reasoned about:
+
+    invoked-from-the-root
+        The original wiring exactly - both invocations from the repository root, which is what
+        shipped and what failed.
+    cd-into-the-wrong-directory
+        Keeps a `cd` but descends one level too far, into the source directory rather than the
+        worker root. A rule that only asked whether a `cd` was present would wave this through, and
+        it really does fail, because `src` then means `workers/backtest/src/src`.
+    worker-removed-entirely
+        Deletes the invocation, which must fail closed rather than report a clean result having
+        checked nothing.
+    both-workers-in-one-root-relative-invocation
+        `mypy workers/research/src workers/backtest/src` - two targets in one command. A rule that
+        resolved the configuration from the first target alone reported this clean, because the
+        research worker declares no `mypy_path` and the backtest worker's entry was never consulted.
+        That is the original defect in the shape a reader is most likely to write.
+    cd-with-an-unrelated-line-between-it-and-mypy
+        `cd`, then an `echo`, then mypy. Bash runs in the directory the `cd` set, so the rule has to
+        as well; the positive control beside it holds the other direction.
+    flag-that-takes-a-value
+        `-p package`, which consumes the next argument. Reading that value as a target reports a
+        directory that was never meant to be one.
+    two-cd-hops-in-one-subshell
+        `(cd workers/backtest && cd src && python -m mypy .)`. Reading only the first hop resolves one
+        level too shallow and reports nothing at all.
 
     What is deliberately NOT a control: `(cd workers/research && python -m mypy ../backtest/src)`.
     That reads like a mistake and is not one - mypy_path resolves against the working directory, and
@@ -1538,3 +2143,124 @@ def test_the_worker_typecheck_check_accepts_a_worker_with_no_configured_paths(wo
                 step["run"] = "set -euo pipefail\npython -m mypy workers/research/src\n"
 
     assert _worker_mypy_problems(mutated) == []
+
+
+def test_the_worker_typecheck_check_carries_a_cd_across_unrelated_lines(workflow: dict) -> None:
+    """The positive counterpart to the last negative control, and the reason for its existence.
+
+    In bash a bare `cd X` holds until another `cd` says otherwise; an unrelated command between
+    them does not undo it. The rule tracks that, so `cd workers/backtest`, an `echo`, then
+    `python -m mypy src` is read as running in workers/backtest, where `mypy_path = ["src",
+    "../research/src"]` both exist - and is accepted.
+
+    Without the carry the same block would be read as running at the repository root, where
+    `src` and `../research/src` name nothing, and this correct invocation would be reported as
+    broken. The direction of that error is the reason it is worth a control: the negative case
+    above would still fail without the carry, just with a different message, so only a positive
+    control can tell the two apart.
+    """
+    mutated = copy.deepcopy(workflow)
+    replaced = 0
+    for job in mutated["jobs"].values():
+        for step in job.get("steps") or []:
+            if "mypy" in str(step.get("run", "")):
+                step["run"] = (
+                    "set -euo pipefail\ncd workers/backtest\necho typechecking\n"
+                    "python -m mypy src\n"
+                )
+                replaced += 1
+    assert replaced, "the mutation did not find a mypy step to replace, so it proved nothing"
+
+    assert _worker_mypy_problems(mutated) == []
+
+
+@pytest.mark.parametrize(
+    "replacement, why",
+    [
+        (
+            "set -euo pipefail\ncd workers/backtest && python -m mypy src\n",
+            "`cd X && cmd` without parentheses both sets the directory and carries the command. An "
+            "earlier version of the rule knew only the parenthesised form, so it resolved this at the "
+            "repository root - where neither mypy_path entry exists - and reported working bash as "
+            "broken",
+        ),
+        (
+            "set -euo pipefail\ncd workers/backtest\npython -m mypy -p webtrade_backtest src\n",
+            "`-p` takes a value, and a value read as a target is a path that does not exist. Only "
+            "`--config-file` was handled at first, so this correct invocation reported "
+            "'webtrade_backtest' as a missing directory. The assertion is what makes that fix "
+            "observable: a rule that started treating flag values as targets again fails here",
+        ),
+        (
+            "set -euo pipefail\ncd workers/backtest/src\ncd ../..\ncd workers/research\n"
+            "python -m mypy src\n",
+            "a `cd` chain on separate lines - the fourth place a directory can come from, after the "
+            "step's own `working-directory:`, the subshell form and the unparenthesised form",
+        ),
+        (
+            "set -euo pipefail\ncd workers/backtest\necho typechecking\n"
+            "python -m mypy --config-file pyproject.toml src\n",
+            "an explicit --config-file in the `=` spelling, whose value must not be read as a target",
+        ),
+    ],
+    ids=[
+        "unparenthesised-cd-then-command",
+        "flag-that-takes-a-value",
+        "chained-cd-lines",
+        "config-file-in-the-equals-spelling",
+    ],
+)
+def test_the_worker_typecheck_check_accepts_correct_bash_in_every_spelling(
+    workflow: dict, replacement: str, why: str
+) -> None:
+    """The positive controls, one per spelling the rule has learned to recognise.
+
+    Each of these invocations genuinely succeeds, so a rule that reports them is wrong even when it
+    reports nothing else. They are the reason the `cd` handling is derived from bash's semantics
+    rather than from the one form the shipped workflow happens to use: a rule that recognises only
+    the current spelling reports the next rewrite as broken, and the natural response to that is to
+    delete the rule.
+
+    Each was written because the rule was measured failing on it, not because the form looked like
+    something bash might do.
+    """
+    mutated = copy.deepcopy(workflow)
+    replaced = 0
+    for job in mutated["jobs"].values():
+        for step in job.get("steps") or []:
+            if "mypy" in str(step.get("run", "")):
+                step["run"] = replacement
+                replaced += 1
+    assert replaced, "the mutation did not find a mypy step to replace, so it proved nothing"
+
+    problems = _worker_mypy_problems(mutated)
+    assert problems == [], f"{why}\n\nReported:\n" + "\n".join(problems)
+
+
+def test_the_worker_typecheck_check_reports_a_directory_outside_the_repository(
+    workflow: dict,
+) -> None:
+    """A `cd` that leaves the repository is a reported problem, not a raised exception.
+
+    The rule names the working directory it resolved, and naming it used `Path.relative_to`, which
+    raises for a path this repository is not a prefix of. So `cd /tmp` turned a workflow defect into
+    a ValueError from inside the checker: an opaque test failure that reads as a bug in the test and
+    names neither the step nor the cause. It fails loud either way, which is why this was rated low
+    rather than fixed immediately - but "fails loud" and "reports what is wrong" are not the same,
+    and the second is what the next reader needs.
+    """
+    mutated = copy.deepcopy(workflow)
+    replaced = 0
+    for job in mutated["jobs"].values():
+        for step in job.get("steps") or []:
+            if "mypy" in str(step.get("run", "")):
+                step["run"] = "set -euo pipefail\ncd /tmp\npython -m mypy .\n"
+                replaced += 1
+    assert replaced, "the mutation did not find a mypy step to replace, so it proved nothing"
+
+    problems = _worker_mypy_problems(mutated)
+    assert problems, "a mypy invocation outside the repository was not reported at all"
+    assert any("outside the repository" in problem for problem in problems), (
+        f"expected the problem to name a directory outside the repository, got:\n"
+        + "\n".join(problems)
+    )

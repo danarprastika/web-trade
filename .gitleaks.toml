@@ -4,7 +4,7 @@
 # no rule below is switched off: a disabled rule is indistinguishable from a rule that found
 # nothing, and this job exists to make that distinction impossible to miss.
 #
-# There are exactly two exceptions, both shaped by the value that triggered them rather than by
+# There are exactly three exceptions, all shaped by the value that triggered them rather than by
 # the file it appeared in. That distinction is the whole point. An allowlist keyed on a path would
 # silently excuse any future secret pasted into contracts/, db/tests/ or docs/; an allowlist keyed
 # on a value shape excuses only that shape.
@@ -14,10 +14,19 @@
 # fixtures would not clear the finding, because the offending values are already in the history
 # being scanned.
 #
+# One carve-out in the scanner itself, stated here rather than discovered later: gitleaks never
+# reports a finding in a file named `.gitleaks.toml`, whatever the --config path is. This file
+# therefore cannot be scanned by the job it configures, and the AWS example key quoted in the
+# first exception below is invisible to it for that reason alone - the same bytes committed under
+# any other name are reported. That is a property of the tool, not a gap in the configuration, but
+# it does mean "this repository is clean" has to be read with one filename excluded.
+#
 # scripts/prove_secret_scan_gate.py is the check on this file. It runs the committed scan command
-# against a scratch repository that contains a planted, unmistakably secret-shaped value and
-# requires it to fail, so widening either exception until the gate is blind is a failing command
-# rather than a green job.
+# against scratch repositories that contain planted, unmistakably secret-shaped values and requires
+# them to fail, so widening any exception until the gate is blind is a failing command rather than
+# a green job. A fifth property runs the same committed command against THIS repository's committed
+# history, because the first four scan repositories the script builds itself and so are structurally
+# incapable of noticing a secret committed here - which has now happened twice.
 
 title = "web-trade"
 
@@ -71,7 +80,14 @@ stopwords = [
 
 [[allowlists]]
 description = "One finding, in commits fa2156f and 21330ed. scripts/prove_secret_scan_gate.py as first committed carried a synthetic GitHub token written out whole, at line 67, because that file exists to plant a value in a scratch repository - so the job that proves the secret scan works was failing on this repository's own source. The file now assembles its planted value from fragments, so no new commit contains it, but the scan covers history and a commit cannot be un-written.\n\nThe pattern is the shape of that one value, not the value: ten digits, then ten lowercase letters, then ten uppercase letters, then six digits, in that order. A real GitHub token is 36 random base62 characters, so the chance of one matching this ordering is negligible - the pattern cannot be used to hide a credential, and it contains no literal token, so this file is not itself a finding. This also means the value is excused wherever it appears, which is why prove_secret_scan_gate.py plants a differently shaped synthetic token: a proof that planted the excused shape would pass whether or not the scan was looking.\n\nScoping this finding by commit, by path or by fingerprint does not work in this scanner, and each was tried rather than assumed. Naming the finding's exact commit leaves it reported. A path alongside a value pattern still excuses the value at any path, because the checks in an allowlist block are alternatives and not a conjunction. A fingerprint naming the exact finding is accepted by the parser and then suppresses nothing. A stopword cannot reach it either, because stopwords are matched against the secret the rule matched - here the token alone - and not against its line."
+  regexTarget = "match"
+  regexes = [
+    '''ghp_[0-9]{10}[a-z]{10}[A-Z]{10}[0-9]{6}''',
+  ]
+
+[[allowlists]]
+description = "One finding, in commits 25bf81f and 5d84f14, and the second time this repository has written a whole GitHub-token-shaped string into its own source while testing this scan. tests/ci/test_ci_workflow.py:632 carried a realistic 36-character base62 control token written out in full, as the control that proves the exception above is too broad to hide a real credential. The scan covers history and a pushed commit cannot be un-written, so the finding stands and needs an exception; the source now assembles the control from fragments, as prove_secret_scan_gate.py already did for its own planted value.\n\nThe pattern is twelve characters of that one value, not the value. This was settled by running the pinned scanner, not by reading its documentation: both an exact-literal pattern and this twelve-character run suppress the finding, and a random well-formed 36-character token is reported under both. Twelve characters is the shortest run that is still specific to this value: a random base62 token has 62^36 possible values and this exception covers 62^12 of them at one fixed offset, so an innocent collision is about 3 in 10^22. The `ghp_` prefix is load-bearing for the same reason and is kept: with the run unanchored to the prefix, a random token carrying it anywhere in its 36 characters is also excused, which widens the exception by the 25 positions that could hold a 12-character run. A full-literal pattern would have worked too, and was rejected: it would put a credential-shaped string in this file, which is the defect being fixed.\n\n`regexTarget = \"match\"` on this entry is INERT, and is kept only for consistency with the first entry. It is here because an earlier version of this file claimed it was load-bearing, and that claim was false: measured against the pinned image, deleting the key still suppresses this finding, because `github-pat`'s expression is `ghp_[0-9a-zA-Z]{36}` with no capture group, so the rule's secret and the span it matched are the same string and the two targets coincide. An earlier probe appeared to show that no value-shaped exception works at all; what it had shown was that the probe scanned a repository containing no finding to suppress. On the first entry the key genuinely does matter, because `generic-api-key` excludes the field name from its secret - which is why the two entries differ, and why the reason is written down rather than left to be re-derived.\n\nAs with the exception above, this one is honoured wherever the value appears, so no new commit may contain that run. The control token in the test is assembled from fragments and prove_secret_scan_gate.py plants a differently shaped value; tests/ci asserts both facts on every run, and also asserts that this working tree contains no contiguous credential-shaped literal at all."
 regexTarget = "match"
 regexes = [
-  '''ghp_[0-9]{10}[a-z]{10}[A-Z]{10}[0-9]{6}''',
+  '''ghp_7Kq2Wz9XpL4m''',
 ]

@@ -100,7 +100,7 @@
     "path": ".kilo/ecc/project-brain/requirements.md",
     "summary": "Execute docs/13 Phases 1-7 to reach G0-G10. Phase 8 (G11 live activation) is out of engineering scope and remains deny-by-default.",
     "first_delivery_boundary": "G0 + G1 (Phases 1-2: foundation and domain core)",
-    "current_work_item": "WI-192"
+    "current_work_item": "WI-193"
   },
   "team": {
     "model": "single-owner serial execution with bounded delegation",
