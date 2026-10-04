@@ -1,14 +1,14 @@
 # G1 Gate Report - Domain Foundation
 
 Specification: docs/11_EXECUTION_GATES.md section G1
-Verified at: 2026-09-29T11:14:30Z
+Verified at: 2026-10-04T12:37:17Z
 **Verdict: FAIL**
 
 ## Why the verdict is FAIL
 
 - 9 of 9 mechanical criteria PASS
 - reviewer field OUTSTANDING
-- commit field OUTSTANDING (HEAD does not contain the work)
+- commit field OUTSTANDING (HEAD f24f78437a78, 8 untracked/modified path(s))
 
 docs/11_EXECUTION_GATES.md states that a gate is PASS only when every listed
 criterion is satisfied and that partial completion is FAIL, not a percentage. All nine
@@ -25,10 +25,10 @@ being certified, so the gate cannot be recorded as PASS.
 | Money/quantity types | **PASS** | exact-decimal Money/Quantity/Decimal; no_float_test enforces the absence of binary floating point; 1 package(s) ok, 0 without tests |
 | Errors | **PASS** | ErrorCode and ContractError with a stable wire form; 1 package(s) ok, 0 without tests |
 | Envelopes | **PASS** | CommandEnvelope and EventEnvelope; actor binding asserted; 1 package(s) ok, 0 without tests |
-| Idempotency | **PASS** | idempotency key in the envelope, in OMS apply, and enforced by a unique index in 0001_ledger.sql; ledger idempotency tests pass; 1 package(s) ok, 0 without tests 1 package(s) ok, 0 without tests 7 package(s) ok, 2 without tests |
-| Configuration boundaries | **PASS** | typed configuration with signed immutable release snapshot and drift detection; 7 package(s) ok, 2 without tests |
-| Migrations | **PASS** | every migration in db/migrations parsed by real_migrations_test.go, which asserts reversibility, explicit BEGIN/COMMIT, and no DROP in an up body; 7 package(s) ok, 2 without tests |
-| Domain tests | **PASS** | 801 test(s) reported PASS: contracts/go 90, components/oms 91, components/risk-engine 136, components/reconciliation 0, adapters/venues 0, services/control-plane 484; declared placeholders with no implementation yet, gated by later work items: adapters/venues, components/reconciliation |
+| Idempotency | **PASS** | idempotency key in the envelope, in OMS apply, and enforced by a unique index in 0001_ledger.sql; ledger idempotency tests pass; 1 package(s) ok, 0 without tests 1 package(s) ok, 0 without tests 11 package(s) ok, 2 without tests |
+| Configuration boundaries | **PASS** | typed configuration with signed immutable release snapshot and drift detection; 11 package(s) ok, 2 without tests |
+| Migrations | **PASS** | every migration in db/migrations parsed by real_migrations_test.go, which asserts reversibility, explicit BEGIN/COMMIT, and no DROP in an up body; 11 package(s) ok, 2 without tests |
+| Domain tests | **PASS** | 1172 test(s) reported PASS: contracts/go 90, components/oms 91, components/risk-engine 136, components/reconciliation 0, adapters/venues 0, services/control-plane 855; declared placeholders with no implementation yet, gated by later work items: adapters/venues, components/reconciliation |
 
 9 of 9 mechanical criteria PASS.
 
@@ -37,7 +37,7 @@ being certified, so the gate cannot be recorded as PASS.
 | Field | Value | Status |
 | --- | --- | --- |
 | reviewer | `None` | OUTSTANDING |
-| commit | `15d978ff5658c0646a63ce5ecc74b998e8bc05a4` | OUTSTANDING |
+| commit | `f24f78437a78b27de982a4d09c2f14d9c3a8eb2b` | OUTSTANDING |
 | timestamp | `recorded above in verified_at` | PRESENT |
 | command_output | `per criterion` | PRESENT |
 | binary_pass_fail | `FAIL` | PRESENT |
@@ -47,7 +47,7 @@ being certified, so the gate cannot be recorded as PASS.
 
 **reviewer** - A named human reviewer cannot be produced by an automated agent. docs/11 requires the gate report to identify its reviewer, and the same package treats an unattested specification as not passed (G0.8 REQUIRES_HUMAN_ATTESTATION).
 
-**commit** - HEAD is 15d978ff5658, but 23 path(s) in the working tree are untracked or modified, including the Go sources and migrations this gate covers. The referenced commit therefore does not contain the work being certified (work_committed=unknown). No commit was requested or made.
+**commit** - HEAD is f24f78437a78, but 8 path(s) in the working tree are untracked or modified, including the Go sources and migrations this gate covers. The referenced commit therefore does not contain the work being certified (work_committed=unknown).
 
 ## Evidence digests
 
@@ -115,9 +115,9 @@ Artifact set digest: `sha256:0d20318cd58fb84b9d9a1629b114654802e89ecfbc23a4d1f17
 
 ### Migrations (PASS)
 
-Artifact set digest: `sha256:e526d4e7541ae462daf3e04d095cfe579e4041e76bd0a6b95205900c2cdffe91`
+Artifact set digest: `sha256:1d8be1c702165a48ec21d434a82e4ba3bc85c6c20c656b1769e0c3ca626fc0a3`
 
-- `services/control-plane/migrate/migrate.go` - `sha256:d992d582a05a6ed7ada5b062eff71f8c118f45ab54e0039cba92fa53651f64e9`
+- `services/control-plane/migrate/migrate.go` - `sha256:e27ec916de880e67edc4863b4933614178a48dd2a09ed1459b860b3b9403e34b`
 - `services/control-plane/migrate/real_migrations_test.go` - `sha256:a65a46d8bae8c1a737403e6956958b04fc8969e8fd694f91074f88fc7d4c5eda`
 - `db/migrations/0001_ledger.sql` - `sha256:22d1d4280cdbe5611e7027c36bf6b77e1dc9cd515f5dc2b26303830ba503e262`
 - `db/migrations/0002_audit.sql` - `sha256:6b7e3f280181b92f70bc659946a6e27dc2c3d92fa3a77f5fd7de94b5614afecd`

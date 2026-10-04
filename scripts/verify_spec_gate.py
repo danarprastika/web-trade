@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import re
 import subprocess
@@ -470,26 +471,80 @@ def check_decisions(pkg: "DocsPackage") -> Criterion:
     )
 
 
-def check_human_attestation() -> Criterion:
-    """The part of G0 a machine cannot decide, stated rather than assumed.
+def check_human_attestation(report: dict | None = None) -> Criterion:
+    """The part of G0 a machine cannot decide, read from a real attestation rather than assumed.
 
     docs/11 requires the gate report to record a *reviewer*. This script is that
     evidence's producer, not its reviewer. Recording an automated run as a human
-    attestation would defeat the control, so the criterion is reported as outstanding
-    rather than satisfied.
+    attestation would defeat the control, so with no attestation on file the criterion is
+    reported as outstanding rather than satisfied.
+
+    When a human HAS attested, the criterion resolves - and only because the attestation
+    in scripts/attestation.py binds to a digest of this report and to a named commit. Both
+    of those go stale the moment the tree moves, so this cannot become a standing permission:
+    the next run over a changed specification reads STALE and the criterion returns to
+    outstanding. That is the whole reason the attestation is a separate artefact rather than
+    a name in this file.
     """
+    if report is None:
+        return Criterion(
+            "G0.8",
+            "Named human reviewer attests the specification package",
+            "REQUIRES_HUMAN_ATTESTATION",
+            "Digest, inventory, legacy-marker and decision-status checks are mechanical and "
+            "have run. Semantic duplicate authority and overall reviewer sign-off are human "
+            "judgements and are NOT asserted by this script.",
+            False,
+        )
+
+    status, record, problems = _attestation().evaluate("G0", report)
+    if status == "RESOLVED" and record is not None:
+        return Criterion(
+            "G0.8",
+            "Named human reviewer attests the specification package",
+            "PASS",
+            f"{record['reviewer']} ({record['reviewer_role']}) attested at "
+            f"{record['attested_at']} against commit {str(record['commit_reviewed'])[:12]} and "
+            f"this report's digest. Statement: {record['statement']}",
+            True,
+        )
     return Criterion(
         "G0.8",
         "Named human reviewer attests the specification package",
         "REQUIRES_HUMAN_ATTESTATION",
-        "Digest, inventory, legacy-marker and decision-status checks are mechanical and "
-        "have run. Semantic duplicate authority and overall reviewer sign-off are human "
-        "judgements and are NOT asserted by this script.",
+        "The mechanical checks have run; the human judgement has not been recorded against THIS "
+        f"report. Attestation status {status}: {'; '.join(problems)}",
         False,
     )
 
 
+def _attestation():
+    """Import scripts/attestation.py by path, so this gate cannot drift from the rule it applies."""
+    path = REPO_ROOT / "scripts" / "attestation.py"
+    if not path.is_file():
+        raise SystemExit(f"cannot load {path}; the attestation rule is required by G0.8")
+    spec = importlib.util.spec_from_file_location("_attestation", path)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def render_markdown(report: GateReport, manifest: dict, commit: str, dirty: bool, ran_at: str) -> str:
+    # The reviewer line states who attested, or that nobody has. It is read from the attestation
+    # rather than written as a constant, because a hardcoded NOT YET ASSIGNED would still read that
+    # way after a real reviewer had signed - which is a report that lies about its own provenance.
+    status, record, _problems = _attestation().evaluate("G0")
+    if status == "RESOLVED" and record is not None:
+        reviewer_cell = (
+            f"**{record['reviewer']}** ({record['reviewer_role']}), attested "
+            f"{record['attested_at']} against `{str(record['commit_reviewed'])[:12]}`"
+        )
+    else:
+        reviewer_cell = f"**NOT YET ASSIGNED** (attestation status {status})"
+
     lines = [
         f"# Gate report — {report.gate}",
         "",
@@ -507,7 +562,7 @@ def render_markdown(report: GateReport, manifest: dict, commit: str, dirty: bool
         f"| docs/ working tree | {'DIRTY' if dirty else 'clean'} |",
         f"| Executed at (UTC) | {ran_at} |",
         "| Automated executor | `team-lead` via `scripts/verify_spec_gate.py` |",
-        "| Human reviewer | **NOT YET ASSIGNED** |",
+        f"| Human reviewer | {reviewer_cell} |",
         "",
         "## Criteria",
         "",
@@ -587,11 +642,33 @@ def main(argv: list[str] | None = None) -> int:
     report.add(check_legacy(pkg, manifest))
     report.add(check_duplicate_bytes(pkg, manifest))
     report.add(check_decisions(pkg))
-    report.add(check_human_attestation())
-
     commit = git_commit()
-    dirty = git_dirty()
     ran_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # What a human reviewer attests to, published in the report so the digest is over exactly the
+    # surface the reviewer read. G0.8 is excluded because it reports whether the attestation exists:
+    # including it would make recording a signature change the digest it is checked against.
+    attested_payload = {
+        "gate": "G0",
+        "specification": "docs/11_EXECUTION_GATES.md section G0",
+        "commit": commit,
+        "manifest": manifest.get("package"),
+        "criteria": [
+            {
+                "id": c.criterion_id,
+                "description": c.description,
+                "result": c.result,
+                "detail": c.detail,
+                "mechanically_verified": c.mechanically_verified,
+            }
+            for c in report.criteria
+            if c.criterion_id != "G0.8"
+        ],
+    }
+    report.add(check_human_attestation(attested_payload))
+    dirty = git_dirty()
+    # Resolved once here and reused by both renderers, so the markdown and the JSON cannot disagree
+    # about who attested.
+    att_status, att_record, _att_problems = _attestation().evaluate("G0", attested_payload)
 
     if not args.json_only:
         for c in report.criteria:
@@ -618,7 +695,21 @@ def main(argv: list[str] | None = None) -> int:
                 "docs_dirty": dirty,
                 "executed_at": ran_at,
                 "executed_by": "scripts/verify_spec_gate.py",
-                "human_reviewer": None,
+                "human_reviewer": (
+                    {
+                        "name": att_record["reviewer"],
+                        "role": att_record["reviewer_role"],
+                        "attested_at": att_record["attested_at"],
+                        "commit_reviewed": att_record["commit_reviewed"],
+                        "statement": att_record["statement"],
+                        "attested_digest": att_record["attested_digest"],
+                    }
+                    if (att_record is not None and att_status == "RESOLVED")
+                    else None
+                ),
+                # Published so the digest an attestation is checked against is computed over exactly
+                # the surface the reviewer read, rather than over this whole file.
+                "attested_payload": attested_payload,
                 "criteria": [
                     {
                         "id": c.criterion_id,

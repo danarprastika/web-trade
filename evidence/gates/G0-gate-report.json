@@ -1,11 +1,68 @@
 {
   "gate": "G0",
   "verdict": "PENDING_HUMAN_ATTESTATION",
-  "commit": "69fb028a35d2589d22e0c0b29ab4d58c0998c377",
+  "commit": "f24f78437a78b27de982a4d09c2f14d9c3a8eb2b",
   "docs_dirty": false,
-  "executed_at": "2026-10-04T07:45:57Z",
+  "executed_at": "2026-10-04T12:30:08Z",
   "executed_by": "scripts/verify_spec_gate.py",
   "human_reviewer": null,
+  "attested_payload": {
+    "gate": "G0",
+    "specification": "docs/11_EXECUTION_GATES.md section G0",
+    "commit": "f24f78437a78b27de982a4d09c2f14d9c3a8eb2b",
+    "manifest": "AI_Trading_Company_FINAL_PRODUCTION_BLUEPRINT",
+    "criteria": [
+      {
+        "id": "G0.1",
+        "description": "All documents listed in the manifest exist",
+        "result": "PASS",
+        "detail": "all 26 listed documents are present and document_count agrees",
+        "mechanically_verified": true
+      },
+      {
+        "id": "G0.2",
+        "description": "Every document matches its declared byte length",
+        "result": "PASS",
+        "detail": "26/26 byte lengths match",
+        "mechanically_verified": true
+      },
+      {
+        "id": "G0.3",
+        "description": "Every SHA-256 digest matches the exact packaged bytes",
+        "result": "PASS",
+        "detail": "26/26 digests match",
+        "mechanically_verified": true
+      },
+      {
+        "id": "G0.4",
+        "description": "No unlisted document is present in docs/",
+        "result": "PASS",
+        "detail": "docs/ contains exactly the 27 manifest-listed files and nothing else",
+        "mechanically_verified": true
+      },
+      {
+        "id": "G0.5",
+        "description": "No unlisted document or legacy version is present",
+        "result": "PASS",
+        "detail": "no draft/superseded/archived/versioned-path markers found in the repository",
+        "mechanically_verified": true
+      },
+      {
+        "id": "G0.6",
+        "description": "No two documents are byte-identical (mechanical duplicate detection)",
+        "result": "PASS",
+        "detail": "all 26 document digests are distinct",
+        "mechanically_verified": true
+      },
+      {
+        "id": "G0.7",
+        "description": "No unresolved architecture choice remains",
+        "result": "PASS",
+        "detail": "all 15 status-bearing ADRs are Accepted; 10 additional binding ADRs (ADR-016\u2013ADR-025) carry a rationale and are implicit-accepted by inclusion in a FINAL package",
+        "mechanically_verified": true
+      }
+    ]
+  },
   "criteria": [
     {
       "id": "G0.1",
@@ -61,7 +118,7 @@
       "description": "Named human reviewer attests the specification package",
       "result": "REQUIRES_HUMAN_ATTESTATION",
       "mechanically_verified": false,
-      "detail": "Digest, inventory, legacy-marker and decision-status checks are mechanical and have run. Semantic duplicate authority and overall reviewer sign-off are human judgements and are NOT asserted by this script."
+      "detail": "The mechanical checks have run; the human judgement has not been recorded against THIS report. Attestation status OUTSTANDING: no attestation recorded at C:\\web-trade\\.kilo\\ecc\\attestations\\G0.json"
     }
   ]
 }

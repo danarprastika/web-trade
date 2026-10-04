@@ -10,11 +10,11 @@ Re-running the script overwrites this file; it is a derived artifact, not an inp
 | Gate | G0 |
 | Specification package | `AI_Trading_Company_FINAL_PRODUCTION_BLUEPRINT` |
 | Manifest status | FINAL |
-| Commit | `69fb028a35d2589d22e0c0b29ab4d58c0998c377` |
+| Commit | `f24f78437a78b27de982a4d09c2f14d9c3a8eb2b` |
 | docs/ working tree | clean |
-| Executed at (UTC) | 2026-10-04T07:45:57Z |
+| Executed at (UTC) | 2026-10-04T12:30:08Z |
 | Automated executor | `team-lead` via `scripts/verify_spec_gate.py` |
-| Human reviewer | **NOT YET ASSIGNED** |
+| Human reviewer | **NOT YET ASSIGNED** (attestation status OUTSTANDING) |
 
 ## Criteria
 
@@ -69,7 +69,7 @@ Re-running the script overwrites this file; it is a derived artifact, not an inp
 ### G0.8 — Named human reviewer attests the specification package
 
 - **Result:** REQUIRES_HUMAN_ATTESTATION
-- Digest, inventory, legacy-marker and decision-status checks are mechanical and have run. Semantic duplicate authority and overall reviewer sign-off are human judgements and are NOT asserted by this script.
+- The mechanical checks have run; the human judgement has not been recorded against THIS report. Attestation status OUTSTANDING: no attestation recorded at C:\web-trade\.kilo\ecc\attestations\G0.json
 
 ## Verdict
 

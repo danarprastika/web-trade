@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import subprocess
 import sys
@@ -436,6 +437,25 @@ def render_markdown(report: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _attestation():
+    """Import scripts/attestation.py by path, so this gate cannot drift from the rule it applies.
+
+    The reviewer field is the whole reason this gate is FAIL, and the rule deciding when it may be
+    recorded lives in exactly one place. A second copy of the staleness check here would be one more
+    edit than it takes for the two to disagree about whether a signature still counts.
+    """
+    path = ROOT / "scripts" / "attestation.py"
+    if not path.is_file():
+        raise SystemExit(f"cannot load {path}; the attestation rule is required by G1")
+    spec = importlib.util.spec_from_file_location("_attestation", path)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def git_field(field: list[str]) -> str:
     code, out = run(field, timeout=120)
     return out if code == 0 else "unavailable"
@@ -457,6 +477,70 @@ def main() -> int:
     # makes the commit field a reference to something that does not contain the work.
     work_committed = "unknown"
 
+    # What a human reviewer attests to, published in the report so the digest is over exactly the
+    # surface the reviewer read. The attestation-derived fields are excluded for the same reason the
+    # commit field is: recording a signature must not change the digest it is checked against.
+    attested_payload = {
+        "gate": "G1",
+        "specification": "docs/11_EXECUTION_GATES.md section G1",
+        "criteria": [r.as_dict() for r in results],
+    }
+    att_status, att_record, _att_problems = _attestation().evaluate("G1", attested_payload)
+
+    reviewer_field = {
+        "value": None,
+        "status": "OUTSTANDING",
+        "reason": "A named human reviewer cannot be produced by an automated agent. "
+                  "docs/11 requires the gate report to identify its reviewer, and the "
+                  "same package treats an unattested specification as not passed "
+                  "(G0.8 REQUIRES_HUMAN_ATTESTATION).",
+    }
+    if att_status == "RESOLVED" and att_record is not None:
+        reviewer_field = {
+            "value": att_record["reviewer"],
+            "status": "PRESENT",
+            "role": att_record["reviewer_role"],
+            "attested_at": att_record["attested_at"],
+            "statement": att_record["statement"],
+            "attested_digest": att_record["attested_digest"],
+        }
+
+    tree_clean = untracked_or_modified == 0
+    commit_field = {
+        "value": head,
+        "status": "PRESENT" if tree_clean else "OUTSTANDING",
+        "reason": (
+            f"HEAD is {head[:12] if head != 'unavailable' else 'unavailable'} and the working tree "
+            f"is clean, so the referenced commit contains the work being certified."
+            if tree_clean
+            else f"HEAD is {head[:12] if head != 'unavailable' else 'unavailable'}, but "
+                 f"{untracked_or_modified} path(s) in the working tree are untracked or "
+                 f"modified, including the Go sources and migrations this gate covers. "
+                 f"The referenced commit therefore does not contain the work being "
+                 f"certified (work_committed={work_committed})."
+        ),
+    }
+
+    binary_pass = (
+        not failed
+        and reviewer_field["status"] == "PRESENT"
+        and commit_field["status"] == "PRESENT"
+    )
+    if binary_pass:
+        binary_reason = (
+            "All nine mechanical criteria PASS, the reviewer field names an attested human whose "
+            "attestation matches this report's digest and names HEAD, and the commit field is "
+            "PRESENT against a clean working tree. docs/11: a gate is PASS only when every listed "
+            "criterion is satisfied."
+        )
+    else:
+        binary_reason = (
+            "docs/11: a gate is PASS only when every listed criterion is satisfied; partial "
+            f"completion is FAIL, not a percentage. Mechanical criteria: "
+            f"{len([r for r in results if r.status == 'PASS'])} of {len(results)} PASS. "
+            f"reviewer field {reviewer_field['status']}, commit field {commit_field['status']}."
+        )
+
     report = {
         "gate": "G1",
         "title": "Domain Foundation",
@@ -469,42 +553,26 @@ def main() -> int:
             "fail": len(failed),
         },
         "required_report_fields": {
-            "reviewer": {
-                "value": None,
-                "status": "OUTSTANDING",
-                "reason": "A named human reviewer cannot be produced by an automated agent. "
-                          "docs/11 requires the gate report to identify its reviewer, and the "
-                          "same package treats an unattested specification as not passed "
-                          "(G0.8 REQUIRES_HUMAN_ATTESTATION).",
-            },
-            "commit": {
-                "value": head,
-                "status": "OUTSTANDING",
-                "reason": f"HEAD is {head[:12] if head != 'unavailable' else 'unavailable'}, but "
-                          f"{untracked_or_modified} path(s) in the working tree are untracked or "
-                          f"modified, including the Go sources and migrations this gate covers. "
-                          f"The referenced commit therefore does not contain the work being "
-                          f"certified (work_committed={work_committed}). No commit was requested "
-                          f"or made.",
-            },
+            "reviewer": reviewer_field,
+            "commit": commit_field,
             "timestamp": {"value": "recorded above in verified_at", "status": "PRESENT"},
             "command_output": {"value": "per criterion", "status": "PRESENT"},
             "binary_pass_fail": {
-                "value": "FAIL",
+                "value": "PASS" if binary_pass else "FAIL",
                 "status": "PRESENT",
-                "reason": "docs/11: a gate is PASS only when every listed criterion is "
-                          "satisfied; partial completion is FAIL, not a percentage. The nine "
-                          "mechanical criteria are individually reported above; the reviewer and "
-                          "commit fields are outstanding, so the gate cannot be recorded as PASS.",
+                "reason": binary_reason,
             },
             "evidence_digests": {"value": "per artifact", "status": "PRESENT"},
         },
-        "verdict": "FAIL",
+        "attested_payload": attested_payload,
+        "verdict": "PASS" if binary_pass else "FAIL",
         "verdict_basis": [
             f"{len([r for r in results if r.status == 'PASS'])} of {len(results)} mechanical "
             f"criteria PASS",
-            "reviewer field OUTSTANDING",
-            "commit field OUTSTANDING (HEAD does not contain the work)",
+            f"reviewer field {reviewer_field['status']}"
+            + (f" ({reviewer_field['value']})" if reviewer_field["value"] else ""),
+            f"commit field {commit_field['status']} (HEAD {head[:12]}, "
+            f"{untracked_or_modified} untracked/modified path(s))",
         ],
     }
 
@@ -517,8 +585,9 @@ def main() -> int:
             print(f"  {mark:4}  {r.name:26} {r.evidence}")
         print()
         print(f"  mechanical: {report['mechanical_result']['pass']}/{len(results)} PASS")
-        print(f"  reviewer:   OUTSTANDING")
-        print(f"  commit:     OUTSTANDING (HEAD {head[:12]}, "
+        print(f"  reviewer:   {reviewer_field['status']}"
+              + (f" ({reviewer_field['value']})" if reviewer_field["value"] else ""))
+        print(f"  commit:     {commit_field['status']} (HEAD {head[:12]}, "
               f"{untracked_or_modified} untracked/modified path(s))")
         print(f"  VERDICT:    {report['verdict']}")
 

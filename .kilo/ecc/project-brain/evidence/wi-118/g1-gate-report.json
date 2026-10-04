@@ -2,7 +2,7 @@
   "gate": "G1",
   "title": "Domain Foundation",
   "specification": "docs/11_EXECUTION_GATES.md section G1",
-  "verified_at": "2026-09-29T11:14:30Z",
+  "verified_at": "2026-10-04T12:37:17Z",
   "criteria": [
     {
       "criterion": "Canonical IDs",
@@ -20,7 +20,7 @@
       "artifact_set_digest": "sha256:fd7afccea49774917ff8df92d42d11b95ebd4839197cb2fd3750d0c02467ee6c",
       "command": "go test ./... in contracts/go: 1 package(s) ok, 0 without tests",
       "command_exit": 0,
-      "command_output": "ok  \tgithub.com/danarprastika/web-trade/contracts/go\t2.935s",
+      "command_output": "ok  \tgithub.com/danarprastika/web-trade/contracts/go\t0.956s",
       "declared_placeholders": {}
     },
     {
@@ -39,7 +39,7 @@
       "artifact_set_digest": "sha256:d01efe2e6cba47a0554ec1b399916e0c1ee73a1a6105c9914177bf7d594b9f4a",
       "command": "contracts.Timestamp canonical form and UTC rejection asserted; 1 package(s) ok, 0 without tests",
       "command_exit": 0,
-      "command_output": "ok  \tgithub.com/danarprastika/web-trade/contracts/go\t3.696s",
+      "command_output": "ok  \tgithub.com/danarprastika/web-trade/contracts/go\t1.403s",
       "declared_placeholders": {}
     },
     {
@@ -70,7 +70,7 @@
       "artifact_set_digest": "sha256:33f19c5ab47a3ffe105e2a7fd2b8b86b79f3a08ce5de898bc61388a5e23f1ba5",
       "command": "exact-decimal Money/Quantity/Decimal; no_float_test enforces the absence of binary floating point; 1 package(s) ok, 0 without tests",
       "command_exit": 0,
-      "command_output": "ok  \tgithub.com/danarprastika/web-trade/contracts/go\t2.699s",
+      "command_output": "ok  \tgithub.com/danarprastika/web-trade/contracts/go\t1.161s",
       "declared_placeholders": {}
     },
     {
@@ -89,7 +89,7 @@
       "artifact_set_digest": "sha256:69fad08b76944b9f0f9cc90a651407cf3ce5efa464eb0ed59043f18f163df57b",
       "command": "ErrorCode and ContractError with a stable wire form; 1 package(s) ok, 0 without tests",
       "command_exit": 0,
-      "command_output": "ok  \tgithub.com/danarprastika/web-trade/contracts/go\t2.892s",
+      "command_output": "ok  \tgithub.com/danarprastika/web-trade/contracts/go\t1.292s",
       "declared_placeholders": {}
     },
     {
@@ -112,7 +112,7 @@
       "artifact_set_digest": "sha256:7a6dc38d828695927a69ffd5b15fe56d22f7e186fee437caac7d7338a0ae18b0",
       "command": "CommandEnvelope and EventEnvelope; actor binding asserted; 1 package(s) ok, 0 without tests",
       "command_exit": 0,
-      "command_output": "ok  \tgithub.com/danarprastika/web-trade/contracts/go\t2.370s",
+      "command_output": "ok  \tgithub.com/danarprastika/web-trade/contracts/go\t1.073s",
       "declared_placeholders": {}
     },
     {
@@ -141,9 +141,9 @@
         }
       ],
       "artifact_set_digest": "sha256:02d1233380149e9c1646593ee5d8d342f7cc8da02b4fccb0f49a63aece27bcf6",
-      "command": "idempotency key in the envelope, in OMS apply, and enforced by a unique index in 0001_ledger.sql; ledger idempotency tests pass; 1 package(s) ok, 0 without tests 1 package(s) ok, 0 without tests 7 package(s) ok, 2 without tests",
+      "command": "idempotency key in the envelope, in OMS apply, and enforced by a unique index in 0001_ledger.sql; ledger idempotency tests pass; 1 package(s) ok, 0 without tests 1 package(s) ok, 0 without tests 11 package(s) ok, 2 without tests",
       "command_exit": 0,
-      "command_output": "--- contracts/go ---\nok  \tgithub.com/danarprastika/web-trade/contracts/go\t2.310s\n--- components/oms ---\nok  \tgithub.com/danarprastika/web-trade/components/oms\t2.092s\n--- services/control-plane ---\n?   \tgithub.com/danarprastika/web-trade/services/control-plane\t[no test files]\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/audit\t2.872s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/authz\t3.233s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/config\t3.602s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/db/contract\t3.411s\n?   \tgithub.com/danarprastika/web-trade/services/control-plane/db/dbgen\t[no test files]\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/ledger\t1.930s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/migrate\t3.404s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/strategy\t1.468s",
+      "command_output": "--- contracts/go ---\nok  \tgithub.com/danarprastika/web-trade/contracts/go\t1.170s\n--- components/oms ---\nok  \tgithub.com/danarprastika/web-trade/components/oms\t0.986s\n--- services/control-plane ---\n?   \tgithub.com/danarprastika/web-trade/services/control-plane\t[no test files]\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/audit\t4.719s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/authz\t3.190s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/bootstrap\t2.064s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/cmd/control-plane\t7.602s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/cmd/migrate\t5.355s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/config\t3.971s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/db/contract\t2.192s\n?   \tgithub.com/danarprastika/web-trade/services/control-plane/db/dbgen\t[no test files]\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/ledger\t1.445s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/migrate\t5.002s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/model\t2.771s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/strategy\t2.103s",
       "declared_placeholders": {}
     },
     {
@@ -172,9 +172,9 @@
         }
       ],
       "artifact_set_digest": "sha256:0d20318cd58fb84b9d9a1629b114654802e89ecfbc23a4d1f17caeae0720cb47",
-      "command": "typed configuration with signed immutable release snapshot and drift detection; 7 package(s) ok, 2 without tests",
+      "command": "typed configuration with signed immutable release snapshot and drift detection; 11 package(s) ok, 2 without tests",
       "command_exit": 0,
-      "command_output": "?   \tgithub.com/danarprastika/web-trade/services/control-plane\t[no test files]\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/audit\t3.499s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/authz\t3.020s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/config\t3.661s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/db/contract\t1.675s\n?   \tgithub.com/danarprastika/web-trade/services/control-plane/db/dbgen\t[no test files]\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/ledger\t3.744s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/migrate\t1.522s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/strategy\t2.061s",
+      "command_output": "?   \tgithub.com/danarprastika/web-trade/services/control-plane\t[no test files]\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/audit\t4.693s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/authz\t2.655s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/bootstrap\t1.346s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/cmd/control-plane\t5.548s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/cmd/migrate\t5.907s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/config\t4.105s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/db/contract\t1.958s\n?   \tgithub.com/danarprastika/web-trade/services/control-plane/db/dbgen\t[no test files]\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/ledger\t2.920s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/migrate\t4.048s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/model\t2.933s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/strategy\t2.110s",
       "declared_placeholders": {}
     },
     {
@@ -183,7 +183,7 @@
       "artifacts": [
         {
           "path": "services/control-plane/migrate/migrate.go",
-          "digest": "sha256:d992d582a05a6ed7ada5b062eff71f8c118f45ab54e0039cba92fa53651f64e9"
+          "digest": "sha256:e27ec916de880e67edc4863b4933614178a48dd2a09ed1459b860b3b9403e34b"
         },
         {
           "path": "services/control-plane/migrate/real_migrations_test.go",
@@ -202,10 +202,10 @@
           "digest": "sha256:7bd18210a4331ac5d12de1fcecbbdbebcb448c4cd3273a5b09f3bb38377799ce"
         }
       ],
-      "artifact_set_digest": "sha256:e526d4e7541ae462daf3e04d095cfe579e4041e76bd0a6b95205900c2cdffe91",
-      "command": "every migration in db/migrations parsed by real_migrations_test.go, which asserts reversibility, explicit BEGIN/COMMIT, and no DROP in an up body; 7 package(s) ok, 2 without tests",
+      "artifact_set_digest": "sha256:1d8be1c702165a48ec21d434a82e4ba3bc85c6c20c656b1769e0c3ca626fc0a3",
+      "command": "every migration in db/migrations parsed by real_migrations_test.go, which asserts reversibility, explicit BEGIN/COMMIT, and no DROP in an up body; 11 package(s) ok, 2 without tests",
       "command_exit": 0,
-      "command_output": "?   \tgithub.com/danarprastika/web-trade/services/control-plane\t[no test files]\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/audit\t3.459s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/authz\t1.233s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/config\t3.534s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/db/contract\t3.206s\n?   \tgithub.com/danarprastika/web-trade/services/control-plane/db/dbgen\t[no test files]\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/ledger\t3.298s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/migrate\t3.211s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/strategy\t1.959s",
+      "command_output": "?   \tgithub.com/danarprastika/web-trade/services/control-plane\t[no test files]\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/audit\t3.280s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/authz\t1.623s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/bootstrap\t1.308s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/cmd/control-plane\t4.468s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/cmd/migrate\t5.587s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/config\t3.155s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/db/contract\t2.359s\n?   \tgithub.com/danarprastika/web-trade/services/control-plane/db/dbgen\t[no test files]\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/ledger\t2.830s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/migrate\t4.170s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/model\t3.853s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/strategy\t1.675s",
       "declared_placeholders": {}
     },
     {
@@ -213,9 +213,9 @@
       "status": "PASS",
       "artifacts": [],
       "artifact_set_digest": null,
-      "command": "801 test(s) reported PASS: contracts/go 90, components/oms 91, components/risk-engine 136, components/reconciliation 0, adapters/venues 0, services/control-plane 484; declared placeholders with no implementation yet, gated by later work items: adapters/venues, components/reconciliation",
+      "command": "1172 test(s) reported PASS: contracts/go 90, components/oms 91, components/risk-engine 136, components/reconciliation 0, adapters/venues 0, services/control-plane 855; declared placeholders with no implementation yet, gated by later work items: adapters/venues, components/reconciliation",
       "command_exit": 0,
-      "command_output": "Drift\n--- PASS: TestEditingOnlyTheDownBodyIsNotDrift (0.00s)\n=== RUN   TestEveryRealMigrationIsReversible\n--- PASS: TestEveryRealMigrationIsReversible (0.02s)\n=== RUN   TestTheRealSetPlansAFullUpAndAFullDown\n--- PASS: TestTheRealSetPlansAFullUpAndAFullDown (0.00s)\n=== RUN   TestNoRealUpBodyDropsWhatItsOwnMigrationCreates\n--- PASS: TestNoRealUpBodyDropsWhatItsOwnMigrationCreates (0.18s)\n=== RUN   TestEveryRealMigrationCarriesItsOwnTransaction\n--- PASS: TestEveryRealMigrationCarriesItsOwnTransaction (0.01s)\n=== RUN   TestDriftFiresOnAnEditedCopyOfTheRealSet\n--- PASS: TestDriftFiresOnAnEditedCopyOfTheRealSet (0.00s)\n=== RUN   TestTheRealMigrationsDirectoryIsTheRepositoryOne\n    real_migrations_test.go:169: verified 3 migration(s) in C:\\web-trade\\db\\migrations\n--- PASS: TestTheRealMigrationsDirectoryIsTheRepositoryOne (0.10s)\nPASS\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/migrate\t2.074s\n=== RUN   TestEveryDeclaredTransitionApplies\n=== RUN   TestEveryDeclaredTransitionApplies/DRAFT_to_REVIEW\n=== RUN   TestEveryDeclaredTransitionApplies/REVIEW_to_BACKTESTED\n=== RUN   TestEveryDeclaredTransitionApplies/BACKTESTED_to_SIMULATION\n=== RUN   TestEveryDeclaredTransitionApplies/SIMULATION_to_PAPER\n=== RUN   TestEveryDeclaredTransitionApplies/PAPER_to_SHADOW\n=== RUN   TestEveryDeclaredTransitionApplies/SHADOW_to_APPROVED\n=== RUN   TestEveryDeclaredTransitionApplies/APPROVED_to_DEPLOYED\n=== RUN   TestEveryDeclaredTransitionApplies/DEPLOYED_to_PAUSED\n=== RUN   TestEveryDeclaredTransitionApplies/PAUSED_to_RETIRED\n--- PASS: TestEveryDeclaredTransitionApplies (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/DRAFT_to_REVIEW (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/REVIEW_to_BACKTESTED (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/BACKTESTED_to_SIMULATION (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/SIMULATION_to_PAPER (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/PAPER_to_SHADOW (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/SHADOW_to_APPROVED (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/APPROVED_to_DEPLOYED (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/DEPLOYED_to_PAUSED (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/PAUSED_to_RETIRED (0.00s)\n=== RUN   TestGraphMatchesDocumentedChain\n--- PASS: TestGraphMatchesDocumentedChain (0.00s)\n=== RUN   TestEveryTransitionDeclaresEverything\n--- PASS: TestEveryTransitionDeclaresEverything (0.00s)\n=== RUN   TestAgentMayNeverBeActorOfRecord\n--- PASS: TestAgentMayNeverBeActorOfRecord (0.00s)\n=== RUN   TestAuthorityBearingTransitionsAreHumanGated\n--- PASS: TestAuthorityBearingTransitionsAreHumanGated (0.00s)\n=== RUN   TestUnknownStateIsRefused\n--- PASS: TestUnknownStateIsRefused (0.00s)\n=== RUN   TestUnknownCommandIsRefused\n--- PASS: TestUnknownCommandIsRefused (0.00s)\n=== RUN   TestCommandMustMatchClaimedState\n--- PASS: TestCommandMustMatchClaimedState (0.00s)\n=== RUN   TestUnauthorisedActorIsDenied\n--- PASS: TestUnauthorisedActorIsDenied (0.00s)\n=== RUN   TestPreconditionMustBeSatisfied\n--- PASS: TestPreconditionMustBeSatisfied (0.00s)\n=== RUN   TestMissingEvidenceReferenceIsRefused\n--- PASS: TestMissingEvidenceReferenceIsRefused (0.00s)\n=== RUN   TestUnattributedRequestIsRefused\n--- PASS: TestUnattributedRequestIsRefused (0.00s)\n=== RUN   TestIdentityAndIdempotencyAreEnforced\n--- PASS: TestIdentityAndIdempotencyAreEnforced (0.00s)\n=== RUN   TestTerminalStateHasNoOnwardTransition\n--- PASS: TestTerminalStateHasNoOnwardTransition (0.00s)\n=== RUN   TestApplyIsDeterministic\n--- PASS: TestApplyIsDeterministic (0.03s)\n=== RUN   TestRejectionCarriesCodeAndCause\n--- PASS: TestRejectionCarriesCodeAndCause (0.00s)\n=== RUN   TestStrategyHoldsNoFinancialAuthority\n--- PASS: TestStrategyHoldsNoFinancialAuthority (0.01s)\n=== RUN   TestDeployedIsEligibilityNotAuthority\n--- PASS: TestDeployedIsEligibilityNotAuthority (0.00s)\nPASS\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/strategy\t2.212s",
+      "command_output": "oRiskVeto (0.00s)\n=== RUN   TestStateChangingToolsAreInvokableDirectly\n--- PASS: TestStateChangingToolsAreInvokableDirectly (0.00s)\n=== RUN   TestUnknownClassificationIsRejectedAtConstruction\n--- PASS: TestUnknownClassificationIsRejectedAtConstruction (0.00s)\n=== RUN   TestConflictingDuplicateToolsAreRefused\n--- PASS: TestConflictingDuplicateToolsAreRefused (0.00s)\n=== RUN   TestToolsWithoutDescriptionsAreRejected\n--- PASS: TestToolsWithoutDescriptionsAreRejected (0.00s)\n=== RUN   TestAnonymousAllowlistsAreRejected\n--- PASS: TestAnonymousAllowlistsAreRejected (0.00s)\n=== RUN   TestRevocationProducesAnEmptyAllowlistAndRequiresAReason\n--- PASS: TestRevocationProducesAnEmptyAllowlistAndRequiresAReason (0.00s)\n=== RUN   TestUnknownInvocationPathIsNotTreatedAsDirect\n--- PASS: TestUnknownInvocationPathIsNotTreatedAsDirect (0.00s)\nPASS\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/model\t2.926s\n=== RUN   TestEveryDeclaredTransitionApplies\n=== RUN   TestEveryDeclaredTransitionApplies/DRAFT_to_REVIEW\n=== RUN   TestEveryDeclaredTransitionApplies/REVIEW_to_BACKTESTED\n=== RUN   TestEveryDeclaredTransitionApplies/BACKTESTED_to_SIMULATION\n=== RUN   TestEveryDeclaredTransitionApplies/SIMULATION_to_PAPER\n=== RUN   TestEveryDeclaredTransitionApplies/PAPER_to_SHADOW\n=== RUN   TestEveryDeclaredTransitionApplies/SHADOW_to_APPROVED\n=== RUN   TestEveryDeclaredTransitionApplies/APPROVED_to_DEPLOYED\n=== RUN   TestEveryDeclaredTransitionApplies/DEPLOYED_to_PAUSED\n=== RUN   TestEveryDeclaredTransitionApplies/PAUSED_to_RETIRED\n--- PASS: TestEveryDeclaredTransitionApplies (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/DRAFT_to_REVIEW (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/REVIEW_to_BACKTESTED (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/BACKTESTED_to_SIMULATION (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/SIMULATION_to_PAPER (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/PAPER_to_SHADOW (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/SHADOW_to_APPROVED (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/APPROVED_to_DEPLOYED (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/DEPLOYED_to_PAUSED (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/PAUSED_to_RETIRED (0.00s)\n=== RUN   TestGraphMatchesDocumentedChain\n--- PASS: TestGraphMatchesDocumentedChain (0.00s)\n=== RUN   TestEveryTransitionDeclaresEverything\n--- PASS: TestEveryTransitionDeclaresEverything (0.00s)\n=== RUN   TestAgentMayNeverBeActorOfRecord\n--- PASS: TestAgentMayNeverBeActorOfRecord (0.00s)\n=== RUN   TestAuthorityBearingTransitionsAreHumanGated\n--- PASS: TestAuthorityBearingTransitionsAreHumanGated (0.00s)\n=== RUN   TestUnknownStateIsRefused\n--- PASS: TestUnknownStateIsRefused (0.00s)\n=== RUN   TestUnknownCommandIsRefused\n--- PASS: TestUnknownCommandIsRefused (0.00s)\n=== RUN   TestCommandMustMatchClaimedState\n--- PASS: TestCommandMustMatchClaimedState (0.00s)\n=== RUN   TestUnauthorisedActorIsDenied\n--- PASS: TestUnauthorisedActorIsDenied (0.00s)\n=== RUN   TestPreconditionMustBeSatisfied\n--- PASS: TestPreconditionMustBeSatisfied (0.00s)\n=== RUN   TestMissingEvidenceReferenceIsRefused\n--- PASS: TestMissingEvidenceReferenceIsRefused (0.00s)\n=== RUN   TestUnattributedRequestIsRefused\n--- PASS: TestUnattributedRequestIsRefused (0.00s)\n=== RUN   TestIdentityAndIdempotencyAreEnforced\n--- PASS: TestIdentityAndIdempotencyAreEnforced (0.00s)\n=== RUN   TestTerminalStateHasNoOnwardTransition\n--- PASS: TestTerminalStateHasNoOnwardTransition (0.00s)\n=== RUN   TestApplyIsDeterministic\n--- PASS: TestApplyIsDeterministic (0.00s)\n=== RUN   TestRejectionCarriesCodeAndCause\n--- PASS: TestRejectionCarriesCodeAndCause (0.00s)\n=== RUN   TestStrategyHoldsNoFinancialAuthority\n--- PASS: TestStrategyHoldsNoFinancialAuthority (0.00s)\n=== RUN   TestDeployedIsEligibilityNotAuthority\n--- PASS: TestDeployedIsEligibilityNotAuthority (0.00s)\nPASS\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/strategy\t1.663s",
       "declared_placeholders": {
         "components/reconciliation": "sha256:25b915d0ffe214243259536e7203b491d7eba3698b88c8ae0053be1256ca5144",
         "adapters/venues": "sha256:51f39d1cee829a0f35d524eca51bd150c2c621775cb65364bb54a00637be74f9"
@@ -234,9 +234,9 @@
       "reason": "A named human reviewer cannot be produced by an automated agent. docs/11 requires the gate report to identify its reviewer, and the same package treats an unattested specification as not passed (G0.8 REQUIRES_HUMAN_ATTESTATION)."
     },
     "commit": {
-      "value": "15d978ff5658c0646a63ce5ecc74b998e8bc05a4",
+      "value": "f24f78437a78b27de982a4d09c2f14d9c3a8eb2b",
       "status": "OUTSTANDING",
-      "reason": "HEAD is 15d978ff5658, but 23 path(s) in the working tree are untracked or modified, including the Go sources and migrations this gate covers. The referenced commit therefore does not contain the work being certified (work_committed=unknown). No commit was requested or made."
+      "reason": "HEAD is f24f78437a78, but 8 path(s) in the working tree are untracked or modified, including the Go sources and migrations this gate covers. The referenced commit therefore does not contain the work being certified (work_committed=unknown)."
     },
     "timestamp": {
       "value": "recorded above in verified_at",
@@ -249,17 +249,240 @@
     "binary_pass_fail": {
       "value": "FAIL",
       "status": "PRESENT",
-      "reason": "docs/11: a gate is PASS only when every listed criterion is satisfied; partial completion is FAIL, not a percentage. The nine mechanical criteria are individually reported above; the reviewer and commit fields are outstanding, so the gate cannot be recorded as PASS."
+      "reason": "docs/11: a gate is PASS only when every listed criterion is satisfied; partial completion is FAIL, not a percentage. Mechanical criteria: 9 of 9 PASS. reviewer field OUTSTANDING, commit field OUTSTANDING."
     },
     "evidence_digests": {
       "value": "per artifact",
       "status": "PRESENT"
     }
   },
+  "attested_payload": {
+    "gate": "G1",
+    "specification": "docs/11_EXECUTION_GATES.md section G1",
+    "criteria": [
+      {
+        "criterion": "Canonical IDs",
+        "status": "PASS",
+        "artifacts": [
+          {
+            "path": "contracts/go/identifier.go",
+            "digest": "sha256:062fb4141e80179b3f1fae97660ca08a913ba5c8abbc03d4846ae81140864c03"
+          },
+          {
+            "path": "contracts/go/identifier_test.go",
+            "digest": "sha256:4c13fccad4bc9c6173520196152074211e82c6edaf4c6c91ebff85f63dbdff9a"
+          }
+        ],
+        "artifact_set_digest": "sha256:fd7afccea49774917ff8df92d42d11b95ebd4839197cb2fd3750d0c02467ee6c",
+        "command": "go test ./... in contracts/go: 1 package(s) ok, 0 without tests",
+        "command_exit": 0,
+        "command_output": "ok  \tgithub.com/danarprastika/web-trade/contracts/go\t0.956s",
+        "declared_placeholders": {}
+      },
+      {
+        "criterion": "Timestamps",
+        "status": "PASS",
+        "artifacts": [
+          {
+            "path": "contracts/go/error.go",
+            "digest": "sha256:ed85d34425f16779c1df5df782c923dd35c8fc3f32f1c4bb29f402222e298b61"
+          },
+          {
+            "path": "contracts/go/error_timestamp_test.go",
+            "digest": "sha256:85b5bcf5199ee0803152c7bbf2f13f32c8b207edaac5391426d85f43d5493cf8"
+          }
+        ],
+        "artifact_set_digest": "sha256:d01efe2e6cba47a0554ec1b399916e0c1ee73a1a6105c9914177bf7d594b9f4a",
+        "command": "contracts.Timestamp canonical form and UTC rejection asserted; 1 package(s) ok, 0 without tests",
+        "command_exit": 0,
+        "command_output": "ok  \tgithub.com/danarprastika/web-trade/contracts/go\t1.403s",
+        "declared_placeholders": {}
+      },
+      {
+        "criterion": "Money/quantity types",
+        "status": "PASS",
+        "artifacts": [
+          {
+            "path": "contracts/go/money.go",
+            "digest": "sha256:d3b08fcd7bda62a264277e0487d93e802124730f03e597b8c3ab4653ad54ce76"
+          },
+          {
+            "path": "contracts/go/decimal.go",
+            "digest": "sha256:82aa4483d19533c2d268c3ffbfcfe7642fa0cb3854f66825a583c5d3e12b143a"
+          },
+          {
+            "path": "contracts/go/money_test.go",
+            "digest": "sha256:9d15b3b2cbae35bb65682a0d90063af7851124cc280eadb1bdf73e99fc7f9ee7"
+          },
+          {
+            "path": "contracts/go/decimal_test.go",
+            "digest": "sha256:a2c280933463459e04cfad90eb7883c62d52e61e32436e53a8b7f12d5dbd0250"
+          },
+          {
+            "path": "contracts/go/no_float_test.go",
+            "digest": "sha256:a6b71874ea5a3d57ac95f5d07b540857476e662c07b08424bbc1fbc2f9ba0593"
+          }
+        ],
+        "artifact_set_digest": "sha256:33f19c5ab47a3ffe105e2a7fd2b8b86b79f3a08ce5de898bc61388a5e23f1ba5",
+        "command": "exact-decimal Money/Quantity/Decimal; no_float_test enforces the absence of binary floating point; 1 package(s) ok, 0 without tests",
+        "command_exit": 0,
+        "command_output": "ok  \tgithub.com/danarprastika/web-trade/contracts/go\t1.161s",
+        "declared_placeholders": {}
+      },
+      {
+        "criterion": "Errors",
+        "status": "PASS",
+        "artifacts": [
+          {
+            "path": "contracts/go/error.go",
+            "digest": "sha256:ed85d34425f16779c1df5df782c923dd35c8fc3f32f1c4bb29f402222e298b61"
+          },
+          {
+            "path": "contracts/go/error_test.go",
+            "digest": "sha256:6aae56cd19570c2f752a98ed4a79f1778bb7ec97a007aa93c2612f7429753c16"
+          }
+        ],
+        "artifact_set_digest": "sha256:69fad08b76944b9f0f9cc90a651407cf3ce5efa464eb0ed59043f18f163df57b",
+        "command": "ErrorCode and ContractError with a stable wire form; 1 package(s) ok, 0 without tests",
+        "command_exit": 0,
+        "command_output": "ok  \tgithub.com/danarprastika/web-trade/contracts/go\t1.292s",
+        "declared_placeholders": {}
+      },
+      {
+        "criterion": "Envelopes",
+        "status": "PASS",
+        "artifacts": [
+          {
+            "path": "contracts/go/envelope.go",
+            "digest": "sha256:6f7df06454ba4d6e2ba81f8fb86457c65d97672e10c4017c8341731008fa8b44"
+          },
+          {
+            "path": "contracts/go/envelope_test.go",
+            "digest": "sha256:b59ecbf628a9486c718cb4ce709524d0f3ed87d8966a5021b48ff54bbd422df8"
+          },
+          {
+            "path": "contracts/go/envelope_actor_test.go",
+            "digest": "sha256:a77bab1ce6d5fd449673fc7d185020d50c10f17752a139dc334394afd1413804"
+          }
+        ],
+        "artifact_set_digest": "sha256:7a6dc38d828695927a69ffd5b15fe56d22f7e186fee437caac7d7338a0ae18b0",
+        "command": "CommandEnvelope and EventEnvelope; actor binding asserted; 1 package(s) ok, 0 without tests",
+        "command_exit": 0,
+        "command_output": "ok  \tgithub.com/danarprastika/web-trade/contracts/go\t1.073s",
+        "declared_placeholders": {}
+      },
+      {
+        "criterion": "Idempotency",
+        "status": "PASS",
+        "artifacts": [
+          {
+            "path": "contracts/go/envelope.go",
+            "digest": "sha256:6f7df06454ba4d6e2ba81f8fb86457c65d97672e10c4017c8341731008fa8b44"
+          },
+          {
+            "path": "components/oms/order.go",
+            "digest": "sha256:55ea6e0ce30ce60fc16fa2d1646c345596f5f963c6aa8e48953108940f7e097b"
+          },
+          {
+            "path": "services/control-plane/ledger/entry.go",
+            "digest": "sha256:397ed2152d57fbdb7260fb8cfca60ddaae95fc79edb3a576c273bedc3951a912"
+          },
+          {
+            "path": "services/control-plane/ledger/ledger_test.go",
+            "digest": "sha256:ed3928a3bb7b7a2f7c9109ba98326d505fbb659208abe2cf82dfc9b72fa12699"
+          },
+          {
+            "path": "db/migrations/0001_ledger.sql",
+            "digest": "sha256:22d1d4280cdbe5611e7027c36bf6b77e1dc9cd515f5dc2b26303830ba503e262"
+          }
+        ],
+        "artifact_set_digest": "sha256:02d1233380149e9c1646593ee5d8d342f7cc8da02b4fccb0f49a63aece27bcf6",
+        "command": "idempotency key in the envelope, in OMS apply, and enforced by a unique index in 0001_ledger.sql; ledger idempotency tests pass; 1 package(s) ok, 0 without tests 1 package(s) ok, 0 without tests 11 package(s) ok, 2 without tests",
+        "command_exit": 0,
+        "command_output": "--- contracts/go ---\nok  \tgithub.com/danarprastika/web-trade/contracts/go\t1.170s\n--- components/oms ---\nok  \tgithub.com/danarprastika/web-trade/components/oms\t0.986s\n--- services/control-plane ---\n?   \tgithub.com/danarprastika/web-trade/services/control-plane\t[no test files]\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/audit\t4.719s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/authz\t3.190s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/bootstrap\t2.064s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/cmd/control-plane\t7.602s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/cmd/migrate\t5.355s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/config\t3.971s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/db/contract\t2.192s\n?   \tgithub.com/danarprastika/web-trade/services/control-plane/db/dbgen\t[no test files]\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/ledger\t1.445s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/migrate\t5.002s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/model\t2.771s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/strategy\t2.103s",
+        "declared_placeholders": {}
+      },
+      {
+        "criterion": "Configuration boundaries",
+        "status": "PASS",
+        "artifacts": [
+          {
+            "path": "services/control-plane/config/config.go",
+            "digest": "sha256:82db4c736d075faa8d1a5ace3fc7a05cc682299179f7f39cc533cf86997400e1"
+          },
+          {
+            "path": "services/control-plane/config/load.go",
+            "digest": "sha256:d7f4e8943f6a38515fd87d775ea124f9d304c101a61ff9b9898c7fa0056ae1bc"
+          },
+          {
+            "path": "services/control-plane/config/sign.go",
+            "digest": "sha256:7bc6441498b1c3b2aaf52238c6a7d2548ce0ff8157f27cb558c1734b73539383"
+          },
+          {
+            "path": "services/control-plane/config/drift.go",
+            "digest": "sha256:d7d0d0d086a2bf0d353e9df45aaf86a2710de24ae699caa5bb3e5f607ff1906c"
+          },
+          {
+            "path": "services/control-plane/config/config_test.go",
+            "digest": "sha256:ff3036cedfedbc73978e485fa1c94d59364f7eeded44fb20b5bf1070f32afc98"
+          }
+        ],
+        "artifact_set_digest": "sha256:0d20318cd58fb84b9d9a1629b114654802e89ecfbc23a4d1f17caeae0720cb47",
+        "command": "typed configuration with signed immutable release snapshot and drift detection; 11 package(s) ok, 2 without tests",
+        "command_exit": 0,
+        "command_output": "?   \tgithub.com/danarprastika/web-trade/services/control-plane\t[no test files]\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/audit\t4.693s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/authz\t2.655s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/bootstrap\t1.346s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/cmd/control-plane\t5.548s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/cmd/migrate\t5.907s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/config\t4.105s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/db/contract\t1.958s\n?   \tgithub.com/danarprastika/web-trade/services/control-plane/db/dbgen\t[no test files]\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/ledger\t2.920s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/migrate\t4.048s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/model\t2.933s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/strategy\t2.110s",
+        "declared_placeholders": {}
+      },
+      {
+        "criterion": "Migrations",
+        "status": "PASS",
+        "artifacts": [
+          {
+            "path": "services/control-plane/migrate/migrate.go",
+            "digest": "sha256:e27ec916de880e67edc4863b4933614178a48dd2a09ed1459b860b3b9403e34b"
+          },
+          {
+            "path": "services/control-plane/migrate/real_migrations_test.go",
+            "digest": "sha256:a65a46d8bae8c1a737403e6956958b04fc8969e8fd694f91074f88fc7d4c5eda"
+          },
+          {
+            "path": "db/migrations/0001_ledger.sql",
+            "digest": "sha256:22d1d4280cdbe5611e7027c36bf6b77e1dc9cd515f5dc2b26303830ba503e262"
+          },
+          {
+            "path": "db/migrations/0002_audit.sql",
+            "digest": "sha256:6b7e3f280181b92f70bc659946a6e27dc2c3d92fa3a77f5fd7de94b5614afecd"
+          },
+          {
+            "path": "db/migrations/0003_authz.sql",
+            "digest": "sha256:7bd18210a4331ac5d12de1fcecbbdbebcb448c4cd3273a5b09f3bb38377799ce"
+          }
+        ],
+        "artifact_set_digest": "sha256:1d8be1c702165a48ec21d434a82e4ba3bc85c6c20c656b1769e0c3ca626fc0a3",
+        "command": "every migration in db/migrations parsed by real_migrations_test.go, which asserts reversibility, explicit BEGIN/COMMIT, and no DROP in an up body; 11 package(s) ok, 2 without tests",
+        "command_exit": 0,
+        "command_output": "?   \tgithub.com/danarprastika/web-trade/services/control-plane\t[no test files]\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/audit\t3.280s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/authz\t1.623s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/bootstrap\t1.308s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/cmd/control-plane\t4.468s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/cmd/migrate\t5.587s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/config\t3.155s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/db/contract\t2.359s\n?   \tgithub.com/danarprastika/web-trade/services/control-plane/db/dbgen\t[no test files]\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/ledger\t2.830s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/migrate\t4.170s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/model\t3.853s\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/strategy\t1.675s",
+        "declared_placeholders": {}
+      },
+      {
+        "criterion": "Domain tests",
+        "status": "PASS",
+        "artifacts": [],
+        "artifact_set_digest": null,
+        "command": "1172 test(s) reported PASS: contracts/go 90, components/oms 91, components/risk-engine 136, components/reconciliation 0, adapters/venues 0, services/control-plane 855; declared placeholders with no implementation yet, gated by later work items: adapters/venues, components/reconciliation",
+        "command_exit": 0,
+        "command_output": "oRiskVeto (0.00s)\n=== RUN   TestStateChangingToolsAreInvokableDirectly\n--- PASS: TestStateChangingToolsAreInvokableDirectly (0.00s)\n=== RUN   TestUnknownClassificationIsRejectedAtConstruction\n--- PASS: TestUnknownClassificationIsRejectedAtConstruction (0.00s)\n=== RUN   TestConflictingDuplicateToolsAreRefused\n--- PASS: TestConflictingDuplicateToolsAreRefused (0.00s)\n=== RUN   TestToolsWithoutDescriptionsAreRejected\n--- PASS: TestToolsWithoutDescriptionsAreRejected (0.00s)\n=== RUN   TestAnonymousAllowlistsAreRejected\n--- PASS: TestAnonymousAllowlistsAreRejected (0.00s)\n=== RUN   TestRevocationProducesAnEmptyAllowlistAndRequiresAReason\n--- PASS: TestRevocationProducesAnEmptyAllowlistAndRequiresAReason (0.00s)\n=== RUN   TestUnknownInvocationPathIsNotTreatedAsDirect\n--- PASS: TestUnknownInvocationPathIsNotTreatedAsDirect (0.00s)\nPASS\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/model\t2.926s\n=== RUN   TestEveryDeclaredTransitionApplies\n=== RUN   TestEveryDeclaredTransitionApplies/DRAFT_to_REVIEW\n=== RUN   TestEveryDeclaredTransitionApplies/REVIEW_to_BACKTESTED\n=== RUN   TestEveryDeclaredTransitionApplies/BACKTESTED_to_SIMULATION\n=== RUN   TestEveryDeclaredTransitionApplies/SIMULATION_to_PAPER\n=== RUN   TestEveryDeclaredTransitionApplies/PAPER_to_SHADOW\n=== RUN   TestEveryDeclaredTransitionApplies/SHADOW_to_APPROVED\n=== RUN   TestEveryDeclaredTransitionApplies/APPROVED_to_DEPLOYED\n=== RUN   TestEveryDeclaredTransitionApplies/DEPLOYED_to_PAUSED\n=== RUN   TestEveryDeclaredTransitionApplies/PAUSED_to_RETIRED\n--- PASS: TestEveryDeclaredTransitionApplies (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/DRAFT_to_REVIEW (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/REVIEW_to_BACKTESTED (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/BACKTESTED_to_SIMULATION (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/SIMULATION_to_PAPER (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/PAPER_to_SHADOW (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/SHADOW_to_APPROVED (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/APPROVED_to_DEPLOYED (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/DEPLOYED_to_PAUSED (0.00s)\n    --- PASS: TestEveryDeclaredTransitionApplies/PAUSED_to_RETIRED (0.00s)\n=== RUN   TestGraphMatchesDocumentedChain\n--- PASS: TestGraphMatchesDocumentedChain (0.00s)\n=== RUN   TestEveryTransitionDeclaresEverything\n--- PASS: TestEveryTransitionDeclaresEverything (0.00s)\n=== RUN   TestAgentMayNeverBeActorOfRecord\n--- PASS: TestAgentMayNeverBeActorOfRecord (0.00s)\n=== RUN   TestAuthorityBearingTransitionsAreHumanGated\n--- PASS: TestAuthorityBearingTransitionsAreHumanGated (0.00s)\n=== RUN   TestUnknownStateIsRefused\n--- PASS: TestUnknownStateIsRefused (0.00s)\n=== RUN   TestUnknownCommandIsRefused\n--- PASS: TestUnknownCommandIsRefused (0.00s)\n=== RUN   TestCommandMustMatchClaimedState\n--- PASS: TestCommandMustMatchClaimedState (0.00s)\n=== RUN   TestUnauthorisedActorIsDenied\n--- PASS: TestUnauthorisedActorIsDenied (0.00s)\n=== RUN   TestPreconditionMustBeSatisfied\n--- PASS: TestPreconditionMustBeSatisfied (0.00s)\n=== RUN   TestMissingEvidenceReferenceIsRefused\n--- PASS: TestMissingEvidenceReferenceIsRefused (0.00s)\n=== RUN   TestUnattributedRequestIsRefused\n--- PASS: TestUnattributedRequestIsRefused (0.00s)\n=== RUN   TestIdentityAndIdempotencyAreEnforced\n--- PASS: TestIdentityAndIdempotencyAreEnforced (0.00s)\n=== RUN   TestTerminalStateHasNoOnwardTransition\n--- PASS: TestTerminalStateHasNoOnwardTransition (0.00s)\n=== RUN   TestApplyIsDeterministic\n--- PASS: TestApplyIsDeterministic (0.00s)\n=== RUN   TestRejectionCarriesCodeAndCause\n--- PASS: TestRejectionCarriesCodeAndCause (0.00s)\n=== RUN   TestStrategyHoldsNoFinancialAuthority\n--- PASS: TestStrategyHoldsNoFinancialAuthority (0.00s)\n=== RUN   TestDeployedIsEligibilityNotAuthority\n--- PASS: TestDeployedIsEligibilityNotAuthority (0.00s)\nPASS\nok  \tgithub.com/danarprastika/web-trade/services/control-plane/strategy\t1.663s",
+        "declared_placeholders": {
+          "components/reconciliation": "sha256:25b915d0ffe214243259536e7203b491d7eba3698b88c8ae0053be1256ca5144",
+          "adapters/venues": "sha256:51f39d1cee829a0f35d524eca51bd150c2c621775cb65364bb54a00637be74f9"
+        }
+      }
+    ]
+  },
   "verdict": "FAIL",
   "verdict_basis": [
     "9 of 9 mechanical criteria PASS",
     "reviewer field OUTSTANDING",
-    "commit field OUTSTANDING (HEAD does not contain the work)"
+    "commit field OUTSTANDING (HEAD f24f78437a78, 8 untracked/modified path(s))"
   ]
 }
