@@ -1631,6 +1631,28 @@
         "WI-121"
       ],
       "evidence_ref": []
+    },
+    {
+      "id": "WI-200",
+      "phase": 3,
+      "title": "The dependency scan blocked on a high npm advisory with no available fix, and the only remediation npm could compute was a two-major-version downgrade of the lint configuration",
+      "status": "COMPLETED",
+      "priority": "high",
+      "acceptance_criteria": [
+        "The accepted finding is keyed to its GHSA identifier, so a second and different advisory in the same package is an unmatched finding and still blocks",
+        "An exception that matches no advisory is itself a failure, so an acceptance cannot outlive the advisory it was granted for",
+        "`npm audit --omit=dev` reports zero blocking advisories, and the gate re-measures it on every run rather than asserting it, so an acceptance justified by 'this never ships' stops holding on the run where it would ship",
+        "A report shape the gate cannot read fails rather than passing as an empty finding set",
+        "Every one of those properties has a control that fails against the implementation without it, and the workflow runs the gate rather than the bare npm command",
+        "The exit conditions are recorded: braces publishing a release covering the advisory, micromatch or fast-glob dropping their braces dependency, Next shipping an eslint-config-next without the plugin's fast-glob chain, or the --omit=dev scan ceasing to be clean"
+      ],
+      "source": "Reading GitHub Actions directly rather than trusting the local suite, which is what revealed the dependency + license scan job failing at its npm audit step while every local gate was green. CI has not had a green run since 299f2e8 on 2026-07-27.",
+      "reproduction": "cd apps/web && npm audit --audit-level=high. Reports 5 high findings and exits 1. The five entries are one advisory plus its four carrier packages: GHSA-vfj7-8cjw-p6xm against braces, reached as eslint-config-next -> @next/eslint-plugin-next -> fast-glob -> micromatch -> braces. `npm audit --omit=dev --audit-level=high` reports found 0 vulnerabilities and exits 0, so the exposure is the lint toolchain only.",
+      "evidence_ref": [
+        "EV-101"
+      ],
+      "notes": "Accepted deliberately, because there is no alternative that is not worse. braces@3.0.3 is the newest published version and `npm view braces dist-tags` shows no beta or next tag, so the advisory's range (<=3.0.3) covers every version that exists. fast-glob has a newer release than the installed one - 3.3.3 against 3.3.1 - and still depends on micromatch ^4.0.8, so moving up the chain does not clear it. npm's only computable remediation is a --force downgrade of eslint-config-next from 16.3.6 to 14.2.35, which would trade a build-time advisory in a linter for a two-major-version regression in the framework's own lint configuration. Replacing eslint-config-next with a hand-written config would clear the chain and discard the Next-specific rules the config exists to supply. Silencing the job or marking it continue-on-error is the outcome every one of these exists to prevent. Impact if realised is CWE-674 stack exhaustion through deeply nested glob patterns, where the patterns come from the linter expanding globs over this repository's own files - trusted input at build time, with no runtime path to the package at all. This item stays COMPLETED because the gate that bounds the acceptance is built and controlled; the risk it records is live and will stay live until one of the exit conditions is met, which is monitored by the --omit=dev check rather than by a human remembering.",
+      "dependencies": []
     }
   ]
 }
