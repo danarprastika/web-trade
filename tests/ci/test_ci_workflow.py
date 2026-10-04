@@ -1774,10 +1774,37 @@ def test_bash_gate_script_passes_a_workflow_with_one_valid_run_block(
 # An earlier version knew only the second and reported the first as broken; a later one knew the
 # first and reported the third as running at the root. Both directions are false positives on
 # correct bash, which is the failure that teaches a reader to ignore a rule.
+#
+# The directory token is matched as quoted-or-bare rather than as a bare run of non-space
+# characters, and `cd`'s own option words are accepted and discarded. `cd "workers/research"` and
+# `cd -P workers/backtest` are both ordinary, correct bash, and a rule that cannot parse them
+# resolves the invocation to the repository root - the false-positive direction again, and the one
+# this batch has now paid for twice. An unquoted capture would also have kept the quotes, producing
+# a path that does not exist and blaming a directory the workflow never names.
 _MYPY_INVOCATION = re.compile(r"python\s+-m\s+mypy\b(?P<args>[^\n)]*)")
-_CD_ONLY = re.compile(r"^cd\s+(?P<dir>[^\s&;)]+)$")
-_SUBSHELL_CD = re.compile(r"^\(\s*cd\s+(?P<dir>[^\s&;)]+)\s*&&\s*(?P<rest>.+)\)$")
-_INLINE_CD = re.compile(r"^cd\s+(?P<dir>[^\s&;)]+)\s*&&\s*(?P<rest>.+)$")
+_CD_DIR = r"""(?:"(?P<dq>[^"]*)"|'(?P<sq>[^']*)'|(?P<bare>[^\s&;)]+))"""
+# `-L`, `-P` and `-e` are bash's own options for cd, and `--` ends option parsing. Each is one
+# token that is not a directory, so each has to be consumed rather than resolved.
+_CD_OPTIONS = r"(?:--|-\S+)"
+_CD_ONLY = re.compile(rf"^cd\s+(?:{_CD_OPTIONS}\s+)?{_CD_DIR}$")
+_SUBSHELL_CD = re.compile(rf"^\(\s*cd\s+(?:{_CD_OPTIONS}\s+)?{_CD_DIR}\s*&&\s*(?P<rest>.+)\)$")
+_INLINE_CD = re.compile(rf"^cd\s+(?:{_CD_OPTIONS}\s+)?{_CD_DIR}\s*&&\s*(?P<rest>.+)$")
+
+
+def _cd_dir(match: re.Match[str]) -> str:
+    """The directory a `cd` pattern matched, unquoted, whichever of the three forms it used.
+
+    Read by name rather than by group index because the index moved when the option word was added:
+    `cd_only.group(1)` kept working when it became the options group, and would have silently
+    resolved every option-taking `cd` to the literal string `-P`.
+    """
+    for name in ("dq", "sq", "bare"):
+        value = match.group(name)
+        if value is not None:
+            return value
+    raise AssertionError(f"no directory captured from {match.group(0)!r}")
+
+
 # Flags that take the following argument as their value. A value read as a target is a path that
 # does not exist, so the rule reports a file that was never meant to be one. `--config-file` was
 # the only one handled at first; the rest were latent because no invocation used them, and a rule
@@ -1828,7 +1855,7 @@ def _cd_chain(rest: str) -> tuple[str, str]:
         hop = _CD_ONLY.match(remaining) or _INLINE_CD.match(remaining)
         if hop is None:
             break
-        directory = hop.group("dir")
+        directory = _cd_dir(hop)
         if hop.re is _CD_ONLY:
             remaining = ""
             break
@@ -1870,16 +1897,16 @@ def _mypy_invocations(workflow: dict) -> list[tuple[str, Path, list[str]]]:
                     # Scoped to the subshell: the enclosing directory is unchanged. Any further
                     # `cd` inside it is resolved, because bash applies those too.
                     this_cd, rest = _cd_chain(subshell.group("rest"))
-                    this_cd = _join(subshell.group("dir"), this_cd)
+                    this_cd = _join(_cd_dir(subshell), this_cd)
                 elif cd_only:
-                    carried = cd_only.group(1)
+                    carried = _cd_dir(cd_only)
                     continue
                 elif inline:
                     # Both a carry-setter and a command carrier: the directory holds for the rest of
                     # the block, and the command on this line runs in it.
-                    carried = _join(inline.group("dir"), "")
+                    carried = _join(_cd_dir(inline), "")
                     this_cd, rest = _cd_chain(inline.group("rest"))
-                    this_cd = _join(inline.group("dir"), this_cd)
+                    this_cd = _join(_cd_dir(inline), this_cd)
                 else:
                     this_cd, rest = "", code
 
@@ -2202,12 +2229,32 @@ def test_the_worker_typecheck_check_carries_a_cd_across_unrelated_lines(workflow
             "python -m mypy --config-file pyproject.toml src\n",
             "an explicit --config-file in the `=` spelling, whose value must not be read as a target",
         ),
+        (
+            'set -euo pipefail\ncd "workers/backtest"\npython -m mypy src\n',
+            "a quoted directory. An unquoted capture kept the quote characters, so the resolved path "
+            "was `\"workers/backtest\"` - a directory that does not exist - and correct bash was "
+            "reported as a missing working directory",
+        ),
+        (
+            "set -euo pipefail\ncd -P workers/backtest\npython -m mypy src\n",
+            "`cd -P`, bash's own option for resolving symlinks. The option word is not a directory, so "
+            "it has to be consumed rather than resolved; reading it as one put the invocation at the "
+            "repository root",
+        ),
+        (
+            "set -euo pipefail\n(cd -P 'workers/backtest' && python -m mypy src)\n",
+            "an option word and quotes together inside the subshell form, which is where the two "
+            "changes have to compose rather than each work alone",
+        ),
     ],
     ids=[
         "unparenthesised-cd-then-command",
         "flag-that-takes-a-value",
         "chained-cd-lines",
         "config-file-in-the-equals-spelling",
+        "quoted-directory",
+        "cd-with-an-option-word",
+        "option-word-and-quotes-in-a-subshell",
     ],
 )
 def test_the_worker_typecheck_check_accepts_correct_bash_in_every_spelling(

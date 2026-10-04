@@ -1486,6 +1486,29 @@
       "evidence_ref": [
         "EV-094"
       ]
+    },
+    {
+      "id": "WI-194",
+      "phase": 2,
+      "title": "The worker typecheck rule reports two correct spellings of `cd` as running at the repository root, after WI-193 rebuilt that rule to stop doing exactly that",
+      "status": "COMPLETED",
+      "priority": "medium",
+      "acceptance_criteria": [
+        "A quoted directory (`cd \"workers/research\"`) resolves to the directory, not to a path that still contains quote characters and therefore does not exist",
+        "A `cd` carrying bash's own option word (`cd -P workers/backtest`, and the `--` form) resolves to the directory rather than being read as the directory",
+        "Both spellings work in all three forms the rule already recognised - bare line, inline `&&`, and subshell - because the fix composes with the existing parsing rather than adding a fourth path through it",
+        "Each new accepted form has a positive control, and each was measured failing against the previous regex rather than being assumed to have been broken",
+        "The capture is read by group name, so adding the optional option word cannot silently change which group holds the directory"
+      ],
+      "source": "Carried out of WI-193. Its review listed both as low-severity observations on the rebuilt `cd` handling - 'cd -P workers/backtest' and 'cd \"workers/backtest\"' are both reported as resolving to the repository root - and the batch closed them as accepted limitations rather than as fixed. They are the same defect class WI-193 spent the batch eliminating: a gate rule that reports correct code, which is the direction that teaches a reader to ignore it.",
+      "reproduction": "Against the regex WI-193 shipped, measured rather than argued:\n  cd \"workers/backtest\"                    -> matched, directory captured as \"workers/backtest\", including both quote characters\n  cd -P workers/backtest                   -> no match, so the invocation was resolved at the repository root\n  (cd -P 'workers/backtest' && python -m mypy src) -> no match, same consequence\nThe first resolves to a path that does not exist, so the rule reports a missing directory the workflow never names. The other two resolve to the repository root, so the rule reads config from the wrong place - which is the under-reporting direction.",
+      "notes": "Both forms are ordinary bash rather than exotic ones. A quoted path is what a shell produces on its own and what many authors write by habit; `-P` is the option a workflow gains when someone wants symlinks resolved in a checkout. Neither is in the shipped workflow today, which is exactly why the defect survived: the rule was derived from the one spelling the repository happens to use, corrected for the spellings that appeared, and left holding a comment that claimed to know bash's semantics.\n\nThe fix is one shared directory token matched as quoted-or-bare, plus an optional option word that is consumed rather than resolved, used by all three existing patterns. Composing them in one place rather than adding a fourth pattern is deliberate: three patterns with three private copies of the directory logic is how they drifted apart in the first place.\n\nThe capture is read through a helper by group name. This is not tidiness - reading it by position would have kept working when the optional group was inserted ahead of the directory, and every option-taking `cd` would have resolved to the literal string `-P`.",
+      "dependencies": [
+        "WI-193"
+      ],
+      "evidence_ref": [
+        "EV-095"
+      ]
     }
   ]
 }
