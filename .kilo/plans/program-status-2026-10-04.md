@@ -1,6 +1,6 @@
 # Program status — 2026-10-04
 
-Snapshot of the platform at `main` = 3b9c9bb, taken so the next session continues instead of
+Snapshot of the platform at `main` = 05dfc64, taken so the next session continues instead of
 re-deriving. Every number below was read from `.kilo/ecc/project-brain/work-items.json` or produced
 by a command in this repository; nothing here is estimated.
 
@@ -8,16 +8,16 @@ by a command in this repository; nothing here is estimated.
 
 | Measure | Value | Source |
 |---|---|---|
-| Work items | 65 | `work-items.json` |
+| Work items | 66 | `work-items.json` |
 | COMPLETED | 39 | `work-items.json` |
 | PENDING | 20 | `work-items.json` |
 | IN_PROGRESS | 4 | `work-items.json` |
 | BLOCKED | 2 | `work-items.json` |
 | BLOCKED_OUT_OF_SCOPE | 1 | `work-items.json` |
 | Gates passed | **none** | `project.json` `current_state.gates_passed` |
-| Commits | 58 | `git rev-list --count HEAD` |
-| Repository gates | 13 of 13 PASS | `python scripts/run_gates.py` |
-| tests/ci | 211 passed | gate battery |
+| Commits | 63 | `git rev-list --count HEAD` |
+| Repository gates | 14 of 14 PASS | `python scripts/run_gates.py` |
+| tests/ci | 229 passed | gate battery |
 | G0 verdict | `PENDING_HUMAN_ATTESTATION` | `scripts/verify_spec_gate.py` |
 
 Phase 2 work is largely built (CI pipeline, control-plane domain core, database assertions for all
@@ -48,6 +48,7 @@ cannot be completed, and therefore the platform cannot be declared operational, 
 G0.8 human attestation          <-- external, blocks everything below at the gate level
   WI-118  G1 domain foundation gate report      BLOCKED (reviewer)
     WI-120  Transactional repositories via sqlc          PENDING
+      WI-196  no-stray-SQL gate (WI-120 AC2, closed early) COMPLETED
       WI-121  Transactional outbox                        PENDING
         WI-122  Outbox dispatcher                         PENDING
       WI-123  Database-enforced idempotency              PENDING
@@ -88,9 +89,20 @@ are resolved, with the fix located in the code rather than inferred from the rev
 
 ## The one defect class that keeps recurring
 
-Five separate work items in this program (WI-193, WI-194, WI-195, EV-091, EV-096) exist because a
-gate was green while proving nothing: a proof that could not see its own repository, a rule that
-rejected two correct spellings of `cd`, a guard satisfied by a test on an unrelated file, a record
-whose counts had stopped being true. Every fix in this batch is paired with a control that is
-**measured to fail** against the code it was written for, not asserted to be the right shape. That
-is the standing rule for the remaining items.
+Six work items now exist because a gate was green while proving nothing: a proof that could not see
+its own repository, a rule that rejected two correct spellings of `cd`, a guard satisfied by a test
+on an unrelated file, a record whose counts had stopped being true, a blocker describing a
+repository that no longer existed, and a rule that existed only as a comment in the file that
+declared itself its authority. Every fix in this batch is paired with a control that is **measured to
+fail** against the code it was written for, and the checks are run against this repository rather
+than against fixtures. That is the standing rule for the remaining items.
+
+## Next session starts here
+
+1. WI-120's other two criteria: transactions wrapping every authoritative transition, and
+   cross-module mutation only through commands or events. Neither has an enforcement gate; both need
+   one, in the same style as `no-stray-sql`.
+2. WI-121 (outbox) before WI-117's durability gap is wired, per the architect's assessment — the fix
+   is the same-transaction outbox, not a write-ahead log, and it must land before the write path has
+   a production caller.
+3. The human attestation for G0.8 and G1. Nothing in this list unblocks it; only the user can.
