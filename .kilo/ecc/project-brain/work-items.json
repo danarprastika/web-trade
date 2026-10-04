@@ -1558,6 +1558,57 @@
       "evidence_ref": [
         "EV-098"
       ]
+    },
+    {
+      "id": "WI-197",
+      "phase": 3,
+      "title": "WI-120's rule that a module may not write another module's tables was asserted in three documents and enforced nowhere",
+      "status": "COMPLETED",
+      "priority": "high",
+      "acceptance_criteria": [
+        "A gate refuses any package outside the owning module that calls a mutating query belonging to that module, demonstrated end to end on a real tracked Go file that is restored byte-for-byte",
+        "A cross-module read of the same query file is accepted, so the rule cannot be satisfied by copying the read into a hand-written string",
+        "Every mutating query the schema declares is either owned by a declared module or the gate fails - a new query file declaring writes cannot pass until someone says who owns it",
+        "Each declared owner exists on disk and carries a reason, and a declared owner with no query file is reported rather than ignored",
+        "The gate reports what it read - query count, how many are called from Go, which are not yet called - so a pass cannot be confused with a scan that read nothing",
+        "The false positives the first run produced on the existing tree are fixed rather than suppressed"
+      ],
+      "source": "Surveying what WI-120 still needs after WI-196 closed the stray-SQL gap, by asking where the ownership rule is written down and then whether anything reads it. Three files state it. Nothing checks it. This is the same defect class as WI-196 and the two found each other: the first was the rule that Go may not hand-write SQL, the second the rule that a module may not write another's tables, and each was a documented prohibition whose only enforcement was the sentence asserting it.",
+      "reproduction": "Before: searching tests/ci for a check that maps a query file to an owning module returns nothing, while docs/01 line 86, docs/05 line 7 and architecture.md line 62 each state the prohibition. Any package could import dbgen and call any query. After: scripts/check_table_ownership.py runs as the table-ownership gate and the same search finds tests/ci/test_table_ownership.py.",
+      "notes": "Two decisions are worth keeping because both are counter-intuitive.\n\nReads are not restricted. The obvious strict version - one module per table, no exceptions - would have failed this repository, because a consistency check and a join legitimately read a table they do not write. Enforcing that would not have removed the coupling; it would have moved it, because the cheapest way to read a table you may not call a query on is to put the read in a string, and that is precisely what check_no_stray_sql exists to catch. A gate whose pressure points at another gate's failure mode is a gate that will be defeated the first quarter someone is behind. So the rule constrains writes, which is what the documents actually prohibit.\n\nThe three-entry ownership map is not the thing being enforced. The map is data a human maintains; a gate that only checks the map is checking itself. What is enforced is that every mutating query's callers must be its owner, so a fourth query file - or a fourth module - fails the gate until someone writes down who owns it and why. Each entry carries its reason, including the one where the stems and the package names differ, because a name mapping inferred from the file name silently acquires a second owner the first time a table moves.\n\nRunning it against the real tree found three false positives that a fixture would not have. `ON CONFLICT ... DO UPDATE SET` matches a naive UPDATE pattern and yields SET as the table name, so the insert target has to win where both appear. And these files document their reasoning in comments next to the code, naming the queries they deliberately do not own - so the caller scan has to blank comments out before it can distinguish an explanation from a call. Both were found by pointing the checker at the repository, which is the seventh time this program has had to learn that lesson.\n\nOne hole was found by reading and is recorded rather than closed: the caller scan skips any path containing `/db/`, which today removes only the sqlc-generated package and one contract test. A future hand-written non-test file under services/control-plane/db/ would be skipped silently. It is stated in EV-099's caveats rather than fixed here, because narrowing the exclusion to the generated package and db/queries is a change to a gate that is currently green and would need its own controls.",
+      "dependencies": [
+        "WI-120"
+      ],
+      "dependency_exemptions": {
+        "WI-120": "Finished ahead of WI-120 deliberately, for the same reason as WI-196. WI-120 is PENDING and blocked behind WI-118, which is BLOCKED on a named human reviewer, and leaving a criterion unenforced for as long as that block lasts is how a documented rule decays into a belief. This work is additive and depends on nothing in WI-120: a new gate, its controls, and two documentation pointers. WI-120 itself is untouched and still PENDING. Its first criterion - every authoritative state transition inside a transaction - is not addressed by this change and is not claimed; that is the next item and it is the one that requires WI-118."
+      },
+      "evidence_ref": [
+        "EV-099"
+      ]
+    },
+    {
+      "id": "WI-198",
+      "phase": 3,
+      "title": "The bash syntax gate reported its own host failure as a malformed workflow, so an intermittent WSL launcher looked like a defect in ci.yml",
+      "status": "COMPLETED",
+      "priority": "high",
+      "acceptance_criteria": [
+        "A non-zero bash exit that carries a diagnostic is reported as a syntax error, unchanged",
+        "A non-zero bash exit with no diagnostic is retried once, and only believed after the retry",
+        "A block that could not be checked is reported as unchecked and named a host failure, not as a malformed run: block - while the gate still fails, because an unchecked block is not a pass",
+        "The gate is bounded, so a wedged launcher is reported as unchecked rather than hanging the run or raising a traceback out of the check",
+        "A launcher blip that clears is reported as a pass, so the retry cannot have been satisfied by a gate that simply always failed",
+        "Each of the four behaviours above has a control, and the controls fail against the pre-fix implementation"
+      ],
+      "source": "Running the WI-197 battery, which is the first time this check has been exercised while the full tests/ci suite was in flight. The failure named a step that is a three-line pip install, with an empty diagnostic - which is the detail that mattered, and which the message format rendered as a sentence with nothing in it.",
+      "reproduction": "Intermittent, and that is the finding. `python -m pytest tests/ci -q` fails test_every_run_block_is_valid_bash with `python: install backtest worker is not valid bash: ` and no diagnostic. The same test alone passes. Driving the gate's own function over all 54 run: blocks, four consecutive trials - 216 invocations - produced zero failures, so the workflow is not malformed and re-running proves nothing about which it was.",
+      "notes": "The discriminator is stderr, and it is exact rather than heuristic: `bash -n` reports a parse error on stderr, so a non-zero exit carrying a diagnostic is a verdict about a real block and a non-zero exit without one never parsed anything. Keying the retry on the exit code alone would have been the obvious implementation and would have been a defect - a flaky launcher could then turn a genuine syntax error into a pass, discarding the one signal that matters in order to add resilience. The control for that is the reason the retry is trustworthy: it asserts a diagnosed failure is attempted exactly once.\n\nThe gate still fails when bash cannot be run at all. It could not: the blocks were not checked, and a check that could not look has verified nothing. What changed is the message - it names the host failure instead of blaming ci.yml, and separates the count of malformed blocks from the count never examined, so the two cannot be read as one number.\n\nThe controls drive the gate's subprocess seam rather than the real binary. The defect is an intermittent property of one launcher, so a control that shelled out would pass on a good day and prove nothing, and standing in a genuinely malformed block for a genuinely absent interpreter is precisely the conflation being removed. Non-vacuity was confirmed by running the pre-fix implementation against the same assertions: it attempts once where the control requires two.",
+      "dependencies": [
+        "WI-197"
+      ],
+      "evidence_ref": [
+        "EV-100"
+      ]
     }
   ]
 }

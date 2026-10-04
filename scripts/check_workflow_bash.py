@@ -43,6 +43,10 @@ WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 # workflow is a failure - at which point the standalone CI step is green for having read nothing.
 VACUITY = "no run: blocks were found; the check is not examining anything"
 
+# Bounded so a wedged launcher is reported rather than hanging the gate. A syntax check of a CI step
+# is not slow work; anything near this limit means bash is not answering, not that the block is long.
+BASH_TIMEOUT_SECONDS = 60
+
 
 @dataclass(frozen=True)
 class RunBlock:
@@ -115,7 +119,36 @@ def bash_syntax_check(script: str) -> subprocess.CompletedProcess[bytes]:
     because the result was doubted and the cause established.
     """
     body = script if script.lstrip().startswith("#!") else "#!/usr/bin/env bash\n" + script
-    return subprocess.run(["bash", "-n"], input=body.encode("utf-8"), capture_output=True)
+    payload = body.encode("utf-8")
+
+    # A `bash -n` that reports a syntax error always writes to stderr, so stderr is the discriminator
+    # between "this block is malformed" and "bash did not run". On Windows `bash` on PATH is the WSL
+    # launcher, and under load it intermittently fails to start: non-zero exit, empty stderr, no
+    # diagnostic. That is the launcher failing, not the workflow, and reporting it as a malformed
+    # workflow asserts something about the workflow that was never established - which is the same
+    # error this function already made twice, in a new disguise. So an empty-stderr failure is
+    # retried once before it is believed, and only believed after the retry.
+    #
+    # The gate still fails if bash cannot be run at all: it fails on the observation, with a message
+    # that names the cause, rather than passing or blaming the workflow. A timeout is reported the
+    # same way - as a non-zero with nothing on stderr - so a wedged launcher produces the honest
+    # message instead of a traceback, and neither attempt can raise out of here.
+    def attempt() -> subprocess.CompletedProcess[bytes] | None:
+        try:
+            return subprocess.run(
+                ["bash", "-n"], input=payload, capture_output=True, timeout=BASH_TIMEOUT_SECONDS
+            )
+        except subprocess.TimeoutExpired:
+            return None
+
+    result = attempt()
+    if result is None:
+        return subprocess.CompletedProcess(["bash", "-n"], 124, b"", b"")
+    if result.returncode != 0 and not result.stderr.strip():
+        retry = attempt()
+        if retry is not None and (retry.returncode == 0 or retry.stderr.strip()):
+            return retry
+    return result
 
 
 def main() -> int:
@@ -136,19 +169,35 @@ def main() -> int:
         return 1
 
     failures = 0
+    unchecked = 0
 
     for block in blocks:
         result = bash_syntax_check(block.script)
         if result.returncode == 0:
             print(f"  [ok]   {block.job}: {block.label}")
-        else:
-            failures += 1
+            continue
+        failures += 1
+        detail = result.stderr.decode("utf-8", "replace").strip()
+        if not detail:
+            # Non-zero with nothing on stderr means bash never parsed the block, so this run
+            # established nothing about whether the block is valid. Saying otherwise would blame the
+            # workflow for the host's launcher, and a re-run is how a team learns to ignore the gate.
+            unchecked += 1
             print(f"  [FAIL] {block.job}: {block.label}")
-            print("         " + (result.stderr.decode("utf-8", "replace").strip() or "syntax error"))
+            print("         bash exited non-zero without a diagnostic, twice: bash could not be run, "
+                  "so this block was NOT checked. This is a host failure, not a workflow defect.")
+            continue
+        print(f"  [FAIL] {block.job}: {block.label}")
+        print("         " + detail)
 
     print()
     if failures:
-        print(f"::error::{failures} of {len(blocks)} run: block(s) are not valid bash")
+        if unchecked:
+            print(f"::error::{failures} of {len(blocks)} run: block(s) failed, and {unchecked} of them "
+                  "were not checked at all because bash could not be run. A host failure is not "
+                  "evidence about the workflow.")
+        else:
+            print(f"::error::{failures} of {len(blocks)} run: block(s) are not valid bash")
         return 1
     print(f"bash syntax gate: PASS ({len(blocks)} run: blocks parsed)")
     return 0

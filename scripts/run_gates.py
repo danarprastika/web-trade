@@ -80,6 +80,7 @@ GATES: list[Gate] = [
     Gate("sqlc-generate", ["sqlc", "generate"], group="code"),
     Gate("sqlc-vet", ["sqlc", "vet"], group="code"),
     Gate("no-stray-sql", [sys.executable, "scripts/check_no_stray_sql.py"], group="code"),
+    Gate("table-ownership", [sys.executable, "scripts/check_table_ownership.py"], group="code"),
 ]
 
 

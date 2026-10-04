@@ -1849,6 +1849,175 @@ def test_bash_gate_script_passes_a_workflow_with_one_valid_run_block(
     assert "PASS (1 run: blocks parsed)" in output, output
 
 
+# --- Distinguishing a malformed block from a launcher that did not run (WI-197) --------
+
+
+def _fake_runner(monkeypatch: pytest.MonkeyPatch, gate, results: list[subprocess.CompletedProcess]):
+    """Make the gate's `bash -n` calls return `results` in order, recording how many were made.
+
+    Replaces subprocess.run inside the gate module rather than the real binary. The failure this
+    guards is an intermittent property of the Windows WSL launcher, so a control that shells out
+    would either pass on a good day and prove nothing, or need a real malformed block to stand in
+    for a real launcher failure - and the point of the change is that those two are no longer the
+    same observation. Driving the seam is the only way to say anything definite about either.
+    """
+    calls: list[bytes] = []
+
+    def fake_run(cmd, input=None, capture_output=False, timeout=None, **kwargs):  # noqa: A002
+        calls.append(input)
+        return results[min(len(calls) - 1, len(results) - 1)]
+
+    monkeypatch.setattr(gate.subprocess, "run", fake_run)
+    return calls
+
+
+def test_a_genuine_syntax_error_is_not_retried_and_keeps_bash_diagnostic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The retry must be gated on an empty stderr, never on a non-zero exit alone.
+
+    `bash -n` reports a parse error on stderr. So a result carrying a diagnostic is a real verdict
+    about a real block, and retrying it would be pointless at best. At worst - if the retry were
+    keyed on the exit code - a flaky launcher could turn a genuine syntax error into a pass, which is
+    the exact inversion this change exists to prevent: the one signal that matters being discarded by
+    the mechanism meant to add resilience.
+    """
+    gate = _bash_gate()
+    diagnostic = b"bash: -c: line 1: syntax error near unexpected token `}'"
+    calls = _fake_runner(
+        monkeypatch,
+        gate,
+        [subprocess.CompletedProcess(["bash", "-n"], 2, b"", diagnostic)],
+    )
+
+    result = gate.bash_syntax_check("if true; then\n")
+
+    assert len(calls) == 1, f"a block with a diagnostic was checked {len(calls)} times; it is a verdict, not a flake"
+    assert result.returncode == 2
+    assert result.stderr == diagnostic
+
+
+def test_bash_failing_to_start_is_reported_as_unchecked_not_as_a_malformed_workflow(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A launcher that will not start must not be reported as a broken workflow.
+
+    Observed on this host: the `table-ownership` battery run failed naming `python: install backtest
+    worker is not valid bash:` with nothing after the colon, while the same 54 blocks passed 216
+    consecutive invocations taken one at a time. Non-zero with empty stderr is the launcher failing,
+    so the run established nothing about the block. Blaming the workflow for it asserts something
+    that was never established, and a gate that reports a defect which does not exist is how a team
+    learns to re-run instead of read.
+    """
+    gate = _bash_gate()
+    calls = _fake_runner(
+        monkeypatch,
+        gate,
+        [subprocess.CompletedProcess(["bash", "-n"], 1, b"", b"")],
+    )
+    workflow_path = tmp_path / "one-run-block.yml"
+    workflow_path.write_text(
+        "jobs:\n  toolchain:\n    steps:\n      - name: one valid block\n"
+        "        run: |\n          set -euo pipefail\n          echo hello\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    original = gate.WORKFLOW
+    gate.WORKFLOW = workflow_path
+    try:
+        exit_code = gate.main()
+        output = capsys.readouterr().out
+    finally:
+        gate.WORKFLOW = original
+
+    assert len(calls) == 2, f"a silent non-zero was believed after {len(calls)} attempt(s); it must be retried once"
+    assert exit_code == 1, "a block that was never checked must not pass; the gate still fails"
+    assert "NOT checked" in output, output
+    assert "host failure, not a workflow defect" in output, output
+    assert "not valid bash" not in output, (
+        "the workflow was reported as malformed although bash never parsed it:\n" + output
+    )
+
+
+def test_a_transient_launcher_failure_that_clears_is_retried_and_passes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The positive control: one silent failure followed by success is not a gate failure.
+
+    Without this, the two tests above would be satisfied by a gate that simply always failed, which
+    is the shape of "fix" that makes a red test green while removing the check.
+    """
+    gate = _bash_gate()
+    calls = _fake_runner(
+        monkeypatch,
+        gate,
+        [
+            subprocess.CompletedProcess(["bash", "-n"], 1, b"", b""),
+            subprocess.CompletedProcess(["bash", "-n"], 0, b"", b""),
+        ],
+    )
+    workflow_path = tmp_path / "one-run-block.yml"
+    workflow_path.write_text(
+        "jobs:\n  toolchain:\n    steps:\n      - name: one valid block\n"
+        "        run: |\n          set -euo pipefail\n          echo hello\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    original = gate.WORKFLOW
+    gate.WORKFLOW = workflow_path
+    try:
+        exit_code = gate.main()
+        output = capsys.readouterr().out
+    finally:
+        gate.WORKFLOW = original
+
+    assert len(calls) == 2
+    assert exit_code == 0, f"a launcher blip that cleared was reported as a failure. Output:\n{output}"
+    assert "PASS (1 run: blocks parsed)" in output, output
+
+
+def test_a_wedged_launcher_times_out_as_unchecked_and_does_not_raise(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A launcher that never answers must produce the honest message, not a traceback.
+
+    The gate is now bounded, and a bound that raises `TimeoutExpired` out of the check has moved the
+    failure rather than fixed it: the caller sees an exception instead of a report, and a script run
+    from CI shows a stack trace where the finding should be. Both attempts are covered - the first
+    call timing out must not fall through into the retry path.
+    """
+    gate = _bash_gate()
+    attempts = {"n": 0}
+
+    def always_wedged(cmd, input=None, capture_output=False, timeout=None, **kwargs):  # noqa: A002
+        attempts["n"] += 1
+        raise subprocess.TimeoutExpired(cmd, timeout or 0)
+
+    monkeypatch.setattr(gate.subprocess, "run", always_wedged)
+    workflow_path = tmp_path / "one-run-block.yml"
+    workflow_path.write_text(
+        "jobs:\n  toolchain:\n    steps:\n      - name: one valid block\n"
+        "        run: |\n          set -euo pipefail\n          echo hello\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    original = gate.WORKFLOW
+    gate.WORKFLOW = workflow_path
+    try:
+        exit_code = gate.main()
+        output = capsys.readouterr().out
+    finally:
+        gate.WORKFLOW = original
+
+    assert attempts["n"] == 1, "a timed-out first attempt must not be retried; it is already an answer"
+    assert exit_code == 1, "an unchecked block must not pass"
+    assert "NOT checked" in output, output
+    assert "host failure, not a workflow defect" in output, output
+
+
 # --- Worker typecheck invocation (WI-192) --------------------------------------
 
 # A mypy invocation, and the ways bash lets a run: block establish the directory it runs in.
