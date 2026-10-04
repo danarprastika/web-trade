@@ -16,9 +16,11 @@
 #     expand/contract migration.
 #
 #   rules
-#     "the Go layer must not contain string literals holding SQL" is asserted by
-#     tests/ci, not by sqlc. sqlc proves the generated code matches the schema; it cannot see
-#     a query that bypasses it.
+#     "the Go layer must not contain statement-shaped SQL" is asserted by
+#     scripts/check_no_stray_sql.py, run as the no-stray-sql repository gate, not by sqlc. sqlc
+#     proves the generated code matches the schema; it cannot see a query that bypasses it. That
+#     comment used to say the rule was asserted by tests/ci, which was true of nothing - the rule
+#     existed only here, so it was a control written in prose and enforced by no one.
 version: "2"
 sql:
   - engine: postgresql

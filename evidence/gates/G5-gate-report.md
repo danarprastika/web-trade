@@ -72,7 +72,7 @@ Mechanically established against a real OS process and a real PostgreSQL 17.11. 
 
 ## Evidence artifacts
 
-94 files, 1161142 bytes, digest `sha256`.
+94 files, 1161386 bytes, digest `sha256`.
 
 Every path is relative to the repository root and every digest is over the exact bytes at the commit above. A criterion cannot be re-verified without these.
 
@@ -171,4 +171,4 @@ Every path is relative to the repository root and every digest is over the exact
 | `services/control-plane/model/structure_test.go` | `fee1d5c9cb37ee83673e4627fea9d3266849ebfe673e59cf6c9897ca4011ccd4` | 9744 |
 | `services/control-plane/model/tools.go` | `968a6bc09caece8110238b2526035cb9ebc3e8d47e556cf65c7f54a7de43fc1d` | 10724 |
 | `services/control-plane/model/tools_test.go` | `55c7981037298c650896d435075be4324fc09c670bdc96e2443072e0d9cc759d` | 10373 |
-| `sqlc.yaml` | `c70093329584775bc14429a6517a3f2f574498cfcfa78892ea751b3090fd58ac` | 1580 |
+| `sqlc.yaml` | `7698cf0515f9a02770d4fa69f58112fff8d5c2722c41b08650cb995aa1ebbfec` | 1824 |

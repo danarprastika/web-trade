@@ -71,7 +71,7 @@
   "evidence_artifacts": {
     "hash": "sha256",
     "count": 94,
-    "total_bytes": 1161142,
+    "total_bytes": 1161386,
     "note": "Every path is relative to the repository root and every digest is over the exact bytes at the commit above. A criterion cannot be re-verified without these.",
     "artifacts": [
       {
@@ -541,8 +541,8 @@
       },
       {
         "path": "sqlc.yaml",
-        "sha256": "c70093329584775bc14429a6517a3f2f574498cfcfa78892ea751b3090fd58ac",
-        "bytes": 1580
+        "sha256": "7698cf0515f9a02770d4fa69f58112fff8d5c2722c41b08650cb995aa1ebbfec",
+        "bytes": 1824
       }
     ]
   }

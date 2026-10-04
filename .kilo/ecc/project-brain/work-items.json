@@ -1532,6 +1532,32 @@
       "evidence_ref": [
         "EV-096"
       ]
+    },
+    {
+      "id": "WI-196",
+      "phase": 3,
+      "title": "WI-120's rule that Go may not reach PostgreSQL with hand-written SQL was asserted by a comment in sqlc.yaml and enforced nowhere",
+      "status": "COMPLETED",
+      "priority": "high",
+      "acceptance_criteria": [
+        "A repository gate fails when a statement-shaped SQL literal appears in a tracked Go file outside the generated package, demonstrated end to end on a real tracked file",
+        "Every statement shape the rule claims to cover has a control that is shown to be found",
+        "The exemptions are named, each with a reason, and the list is proven to exactly equal the set of files that actually contain SQL - no unused allowance and no unlisted violation",
+        "The gate reports how many files it checked, so a pass cannot be confused with a scan that read nothing",
+        "The false positive it produced on the existing tree is fixed rather than suppressed"
+      ],
+      "source": "Read while surveying what WI-120 still needs, by searching tests/ci for the check sqlc.yaml credits it with and finding none. The gap was a documented enforcement claim with no enforcement, found in the file that is the declared authority on the subject.",
+      "reproduction": "Before: Select-String for the SQL-literal rule across tests/ci returns nothing, while sqlc.yaml states 'the Go layer must not contain statement literals holding SQL is asserted by tests/ci'. After: scripts/check_no_stray_sql.py runs as the no-stray-sql gate and the same search finds tests/ci/test_no_stray_sql.py.",
+      "notes": "Writing the check found two things that reading it would not have. First, the migrator's advisory-lock pair - `SELECT pg_advisory_lock($1)` - is a query with no FROM, so none of the nine statement shapes match it and it passed; enumerating shapes cannot close that, so the rule now also fires on a SQL keyword and a bind placeholder in the same statement, which catches the shapes nobody wrote down without matching prose. Second, the first SELECT pattern carried an untempered 400-character window and reported `SELECT pg_advisory_lock($1)` by finding the FROM of whatever statement followed it - a false positive in the checker, found by running it against the real tree rather than against a sample.\n\nBoth were found because the check was run against this repository instead of a fixture. That is the sixth time this program has learned it, and it is why the end-to-end control mutates a real tracked file rather than asserting the patterns in isolation.\n\nThe exemptions are proven complete in both directions by a test that walks every tracked Go file: the set of files holding SQL must equal the exempt set. That test is what found the second exemption - migrate/store_sql.go was not listed when the rule first ran.",
+      "dependencies": [
+        "WI-120"
+      ],
+      "dependency_exemptions": {
+        "WI-120": "Finished ahead of WI-120 deliberately. WI-120's second acceptance criterion is that no direct table write happens outside the owning module, and the only thing enforcing it was a comment in sqlc.yaml; leaving that unenforced while WI-120 waits on a human reviewer would mean the criterion has no guard for as long as the block lasts. The work is additive and depends on nothing in WI-120: a new gate and its controls. WI-120 itself is untouched and still PENDING - its other two criteria, transaction-wrapping and cross-module mutation, are not addressed here and are not claimed."
+      },
+      "evidence_ref": [
+        "EV-098"
+      ]
     }
   ]
 }
