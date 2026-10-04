@@ -29,6 +29,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -46,6 +47,22 @@ VACUITY = "no run: blocks were found; the check is not examining anything"
 # Bounded so a wedged launcher is reported rather than hanging the gate. A syntax check of a CI step
 # is not slow work; anything near this limit means bash is not answering, not that the block is long.
 BASH_TIMEOUT_SECONDS = 60
+
+# How long to wait before each re-attempt, and therefore how many re-attempts there are. A tuple of
+# delays rather than a retry count, so the bound is visible as the thing it is - a schedule - and so
+# the wait grows while the number of attempts stays small. Total worst-case added latency for a
+# single block is the sum of these, and it is only ever spent when bash has already failed to answer.
+#
+# One retry was not enough, and the evidence is specific: the full tests/ci battery failed twice on
+# this gate with 2 of 54 blocks reporting a silent non-zero, having exhausted a single retry on the
+# same block, while the same 54 blocks passed 8 of 8 invocations taken one at a time on the same
+# tree with no other load. The gate makes one launcher invocation per block, so it asks the Windows
+# WSL launcher to start 54 times in a row, and under load the launcher intermittently fails to start
+# more than twice in a row. A single retry turned a property of the host into a red test suite, which
+# is the same defect as blaming the workflow: a host condition being reported as a finding. The
+# depth is what removes it; the bound is what keeps the removal honest, because if bash cannot be run
+# at all the gate must still fail and still must not claim to have checked anything.
+LAUNCHER_RETRY_DELAYS_SECONDS = (0.2, 0.6, 1.5)
 
 
 @dataclass(frozen=True)
@@ -127,12 +144,19 @@ def bash_syntax_check(script: str) -> subprocess.CompletedProcess[bytes]:
     # diagnostic. That is the launcher failing, not the workflow, and reporting it as a malformed
     # workflow asserts something about the workflow that was never established - which is the same
     # error this function already made twice, in a new disguise. So an empty-stderr failure is
-    # retried once before it is believed, and only believed after the retry.
+    # retried, on the schedule in LAUNCHER_RETRY_DELAYS_SECONDS, before it is believed.
+    #
+    # The retry is keyed on the empty stderr and not on the exit code. A result carrying a diagnostic
+    # is a verdict about a real block, and re-running it could only discard that verdict - turning a
+    # genuine syntax error into a pass, which inverts the one signal that matters. So a diagnostic ends
+    # the ladder immediately, and only silence buys another attempt.
     #
     # The gate still fails if bash cannot be run at all: it fails on the observation, with a message
     # that names the cause, rather than passing or blaming the workflow. A timeout is reported the
     # same way - as a non-zero with nothing on stderr - so a wedged launcher produces the honest
-    # message instead of a traceback, and neither attempt can raise out of here.
+    # message instead of a traceback, and neither attempt can raise out of here. A timeout ends the
+    # ladder rather than consuming it: bash declining to answer once is an answer, and spending three
+    # more minutes of host time to be told the same thing is not resilience, it is delay.
     def attempt() -> subprocess.CompletedProcess[bytes] | None:
         try:
             return subprocess.run(
@@ -144,10 +168,15 @@ def bash_syntax_check(script: str) -> subprocess.CompletedProcess[bytes]:
     result = attempt()
     if result is None:
         return subprocess.CompletedProcess(["bash", "-n"], 124, b"", b"")
-    if result.returncode != 0 and not result.stderr.strip():
+
+    for delay in LAUNCHER_RETRY_DELAYS_SECONDS:
+        if result.returncode == 0 or result.stderr.strip():
+            break
+        time.sleep(delay)
         retry = attempt()
-        if retry is not None and (retry.returncode == 0 or retry.stderr.strip()):
-            return retry
+        if retry is None:
+            return subprocess.CompletedProcess(["bash", "-n"], 124, b"", b"")
+        result = retry
     return result
 
 
@@ -184,7 +213,8 @@ def main() -> int:
             # workflow for the host's launcher, and a re-run is how a team learns to ignore the gate.
             unchecked += 1
             print(f"  [FAIL] {block.job}: {block.label}")
-            print("         bash exited non-zero without a diagnostic, twice: bash could not be run, "
+            print(f"         bash exited non-zero without a diagnostic on all "
+                  f"{1 + len(LAUNCHER_RETRY_DELAYS_SECONDS)} attempts: bash could not be run, "
                   "so this block was NOT checked. This is a host failure, not a workflow defect.")
             continue
         print(f"  [FAIL] {block.job}: {block.label}")

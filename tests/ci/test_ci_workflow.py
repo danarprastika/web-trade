@@ -1931,7 +1931,12 @@ def test_bash_failing_to_start_is_reported_as_unchecked_not_as_a_malformed_workf
     finally:
         gate.WORKFLOW = original
 
-    assert len(calls) == 2, f"a silent non-zero was believed after {len(calls)} attempt(s); it must be retried once"
+    expected_attempts = 1 + len(gate.LAUNCHER_RETRY_DELAYS_SECONDS)
+    assert len(calls) == expected_attempts, (
+        f"a silent non-zero was believed after {len(calls)} attempt(s); the ladder is "
+        f"{expected_attempts} attempts deep and must be exhausted before the block is called "
+        "unchecked"
+    )
     assert exit_code == 1, "a block that was never checked must not pass; the gate still fails"
     assert "NOT checked" in output, output
     assert "host failure, not a workflow defect" in output, output
@@ -1976,6 +1981,106 @@ def test_a_transient_launcher_failure_that_clears_is_retried_and_passes(
     assert len(calls) == 2
     assert exit_code == 0, f"a launcher blip that cleared was reported as a failure. Output:\n{output}"
     assert "PASS (1 run: blocks parsed)" in output, output
+
+
+def test_the_launcher_ladder_tolerates_the_depth_actually_observed_on_this_host(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Two silent failures in a row, then bash answers: the gate passes.
+
+    This is the depth the real failure had and one retry could not reach. The full tests/ci battery
+    failed twice with 2 of 54 blocks reporting a silent non-zero *after* exhausting the single retry,
+    while the identical tree passed 8 of 8 unloaded invocations - so the launcher failed twice in a
+    row under load rather than once, and a one-deep ladder converted a host condition into a red
+    suite.
+
+    Pinned to exactly two because that is the observation. A deeper ladder would pass this test too,
+    which is why the bound has its own test below: this one says the failure that happened is handled,
+    and the other says the handling cannot quietly grow without end.
+    """
+    gate = _bash_gate()
+    calls = _fake_runner(
+        monkeypatch,
+        gate,
+        [
+            subprocess.CompletedProcess(["bash", "-n"], 1, b"", b""),
+            subprocess.CompletedProcess(["bash", "-n"], 1, b"", b""),
+            subprocess.CompletedProcess(["bash", "-n"], 0, b"", b""),
+        ],
+    )
+    workflow_path = tmp_path / "one-run-block.yml"
+    workflow_path.write_text(
+        "jobs:\n  toolchain:\n    steps:\n      - name: one valid block\n"
+        "        run: |\n          set -euo pipefail\n          echo hello\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    original = gate.WORKFLOW
+    gate.WORKFLOW = workflow_path
+    try:
+        exit_code = gate.main()
+        output = capsys.readouterr().out
+    finally:
+        gate.WORKFLOW = original
+
+    assert len(calls) == 3, f"expected the ladder to recover on the third attempt, saw {len(calls)}"
+    assert exit_code == 0, (
+        "two consecutive launcher failures under load were reported as a gate failure. The workflow "
+        f"was never shown to be malformed. Output:\n{output}"
+    )
+    assert "PASS (1 run: blocks parsed)" in output, output
+
+
+def test_the_launcher_retry_ladder_is_bounded(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The bound must be a small constant, not a function of the workflow or an open-ended loop.
+
+    Retrying harder is the right response to a launcher that fails a bounded number of times. Retrying
+    until bash answers is not: it converts a gate into an outage, and a gate that has lost the ability
+    to say "I could not check this" has stopped being a check. So the bound is asserted three ways -
+    it exists, it is small, and it does not grow with the number of blocks - and the block count is
+    raised past the bound so a per-block loop would be caught rather than merely look fine at one block.
+    """
+    gate = _bash_gate()
+
+    delays = gate.LAUNCHER_RETRY_DELAYS_SECONDS
+    assert isinstance(delays, tuple), "the bound must be a fixed schedule, not a computed count"
+    assert 0 < len(delays) <= 5, f"a {len(delays)}-deep ladder is not a bounded one; {delays}"
+    assert all(isinstance(d, (int, float)) and d > 0 for d in delays), (
+        f"every delay must be a positive number of seconds; {delays}"
+    )
+
+    # More blocks than the ladder is deep. A per-block retry loop would make this proportional.
+    block_count = len(delays) * 3
+    calls = _fake_runner(
+        monkeypatch, gate, [subprocess.CompletedProcess(["bash", "-n"], 1, b"", b"")]
+    )
+    body = "jobs:\n  toolchain:\n    steps:\n" + "".join(
+        f"      - name: block {index}\n        run: |\n          set -euo pipefail\n          echo {index}\n"
+        for index in range(block_count)
+    )
+    workflow_path = tmp_path / "many-run-blocks.yml"
+    workflow_path.write_text(body, encoding="utf-8", newline="\n")
+
+    original = gate.WORKFLOW
+    gate.WORKFLOW = workflow_path
+    try:
+        exit_code = gate.main()
+        output = capsys.readouterr().out
+    finally:
+        gate.WORKFLOW = original
+
+    assert len(calls) == block_count * (1 + len(delays)), (
+        f"{len(calls)} attempts for {block_count} blocks is not "
+        f"{1 + len(delays)} per block; the retry budget must be a per-block constant"
+    )
+    assert exit_code == 1, "a launcher that never answers must still fail the gate"
+    assert output.count("NOT checked") == block_count, (
+        f"every block must be reported unchecked, not just some: {output.count('NOT checked')} of "
+        f"{block_count}"
+    )
 
 
 def test_a_wedged_launcher_times_out_as_unchecked_and_does_not_raise(
