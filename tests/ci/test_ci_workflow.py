@@ -2292,6 +2292,23 @@ def _join(first: str, second: str) -> str:
     return f"{first}/{second}" if second else first
 
 
+def _outside_repository(cwd: Path) -> bool:
+    """Whether a resolved working directory lies outside the repository.
+
+    One definition, because there are now two questions that depend on it - how to NAME such a
+    directory, and whether to REPORT it - and a containment rule restated per caller is a rule that
+    can be tightened in one message and not the other, which would leave a message claiming a
+    directory is outside the repository while the finding that says so was never raised.
+    """
+    if cwd == REPO_ROOT:
+        return False
+    try:
+        cwd.relative_to(REPO_ROOT)
+    except ValueError:
+        return True
+    return False
+
+
 def _describe_directory(cwd: Path) -> str:
     """How to name a working directory in a message, including one outside the repository.
 
@@ -2302,10 +2319,9 @@ def _describe_directory(cwd: Path) -> str:
     """
     if cwd == REPO_ROOT:
         return "the repository root"
-    try:
-        return str(cwd.relative_to(REPO_ROOT))
-    except ValueError:
+    if _outside_repository(cwd):
         return f"{cwd} (outside the repository)"
+    return str(cwd.relative_to(REPO_ROOT))
 
 
 def _worker_mypy_problems(workflow: dict) -> list[str]:
@@ -2332,6 +2348,23 @@ def _worker_mypy_problems(workflow: dict) -> list[str]:
             continue
 
         described = _describe_directory(cwd)
+
+        # Reported in its own right, before any per-target work. It used to be mentioned only inside
+        # the two messages below, and both are conditional on something else being true first: a
+        # target that does not exist, or a mypy_path entry that does not resolve. A `cd /tmp`
+        # followed by `python -m mypy .` satisfies neither - `/tmp` exists, so the first is skipped,
+        # and there is no pyproject.toml above `.`, so the second never gets as far as its path
+        # entries - and the invocation left the repository entirely without that fact appearing in
+        # any finding. The control below therefore passed on Windows, where `/tmp` does not exist and
+        # the first message fires incidentally, and failed on the Linux runner, where it does not.
+        # That is the platform difference hiding the defect rather than causing it: the check was
+        # silent about the worst case on the platform that has `/tmp`.
+        if _outside_repository(cwd):
+            problems.append(
+                f"{where}: mypy runs in {described}, so the worker it type-checks is not a worker in "
+                "this tree and nothing below this finding can be established about it"
+            )
+
         for target in targets:
             if not (cwd / target).is_dir():
                 problems.append(
@@ -2671,6 +2704,53 @@ def test_the_worker_typecheck_check_reports_a_directory_outside_the_repository(
 
     problems = _worker_mypy_problems(mutated)
     assert problems, "a mypy invocation outside the repository was not reported at all"
+    assert any("outside the repository" in problem for problem in problems), (
+        f"expected the problem to name a directory outside the repository, got:\n"
+        + "\n".join(problems)
+    )
+
+
+def test_a_well_configured_worker_outside_the_repository_is_still_reported(
+    workflow: dict, tmp_path: Path
+) -> None:
+    """The control that shows how bad the missing finding was: the gate called it clean.
+
+    The control above mutates the step to `cd /tmp`, and it fails on the Linux runner because /tmp
+    exists there and has no pyproject.toml - so the finding that reaches the report is about a missing
+    configuration, with "outside the repository" carried along inside it. That is the incidental
+    mention, not a finding about the location, and it is the only reason that control passed on
+    Windows.
+
+    So this one removes the accident. The directory it points at is real, holds a pyproject.toml
+    declaring [tool.mypy], declares no mypy_path, and the target exists. Every per-target check the
+    rule performs is therefore satisfied, and before this change the checker returned no problems at
+    all: a workflow that type-checks an arbitrary directory outside the repository, with a
+    configuration the rule cannot see and never verified, was reported as sound. It is the same shape
+    as the defects this repository keeps recording - a gate that reports success for something it did
+    not examine - reached by a route nobody took, because every real invocation happens to be inside
+    the tree and so the missing finding never mattered until a platform made it visible.
+    """
+    outside = tmp_path / "not-the-repository"
+    outside.mkdir()
+    (outside / "pyproject.toml").write_text(
+        "[tool.mypy]\nstrict = true\n", encoding="utf-8", newline="\n"
+    )
+
+    mutated = copy.deepcopy(workflow)
+    replaced = 0
+    for job in mutated["jobs"].values():
+        for step in job.get("steps") or []:
+            if "mypy" in str(step.get("run", "")):
+                step["run"] = f"set -euo pipefail\ncd {outside}\npython -m mypy .\n"
+                replaced += 1
+    assert replaced, "the mutation did not find a mypy step to replace, so it proved nothing"
+
+    problems = _worker_mypy_problems(mutated)
+
+    assert problems, (
+        "a mypy invocation in a well-configured directory outside the repository was reported as "
+        "sound; the rule is certifying a configuration it never read"
+    )
     assert any("outside the repository" in problem for problem in problems), (
         f"expected the problem to name a directory outside the repository, got:\n"
         + "\n".join(problems)
