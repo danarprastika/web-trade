@@ -1509,6 +1509,29 @@
       "evidence_ref": [
         "EV-095"
       ]
+    },
+    {
+      "id": "WI-195",
+      "phase": 2,
+      "title": "The SAST empty-list guard accepts a negated file-size test on any file, so the module list can go untested while the check reports a passing build",
+      "status": "COMPLETED",
+      "priority": "medium",
+      "acceptance_criteria": [
+        "A negated `-s` test is accepted or rejected on its operand, not on the presence of `-s`",
+        "Every accepted form tests either `modules.txt` or a module count this step computes",
+        "The operand is read from the whole bracketed test, so `if [ \"$count\" -eq 0 ]` is read as testing `$count` rather than as testing the literal `0`",
+        "A test whose operator is not an emptiness test is rejected even when it names the list, so the rule cannot be satisfied by an unrelated property of the same file",
+        "Seven accepted spellings are pinned by positive controls, and the negative mutants are shown to fail against the previous implementation rather than assumed to have been holes"
+      ],
+      "source": "Found by reading the rebuilt rule rather than by a failing gate, and named in the WI-193 handover as the one known false negative left in a gate assertion. The branch read `!-s` without reading the operand, so the two safe spellings and every unsafe one were indistinguishable to it.",
+      "reproduction": "Replaying the previous implementation unchanged over the new mutants: `if [ ! -s \"$GITHUB_ENV\" ]; then` was ACCEPTED as the module-list guard, and `if [ \"$module_total\" -lt 1 ]; then` was already rejected. The first is a real hole; the second was not, and its control says so rather than claiming a second defect.",
+      "notes": "The consequence of the hole is the one this gate exists to prevent, one level up. The step resolves the module list with `go work edit -json`, loops over it building each module, and the loop body running zero times is exit 0 with nothing built - the same silent no-op the process-substitution form had. A guard on an unrelated file's emptiness changes nothing about the module list.\n\nThe operand is read from the bracketed test rather than from after the operator because `-eq` puts the value under test first. The first attempt at this fix kept reading right-of-the-operator and rejected the SHIPPED guard - caught by the positive controls before it was committed, which is what they are for. The operator set is explicit rather than a character class, so `-f` and `-d` on the same file stay rejected.\n\nThe second mutant is kept as a control even though the previous code already rejected it, because this change replaces a literal `-eq 0` with a set of operators - precisely the rewrite that would reintroduce the acceptance. It pins the rejection across both implementations instead of only the current one.",
+      "dependencies": [
+        "WI-193"
+      ],
+      "evidence_ref": [
+        "EV-096"
+      ]
     }
   ]
 }

@@ -492,23 +492,36 @@ def test_the_go_sast_leg_builds_every_workspace_module_rather_than_autobuilding_
         if (match := re.search(r"^([A-Za-z_]\w*)=\"?\$\(\s*wc\b.*\bmodules\.txt", line))
     }
 
+    # The operators that can express "this is empty": a file-size test, the numeric comparisons, and a
+    # string-emptiness test. A test on any other property - `-d`, `-f`, `-x` - is a different check
+    # however it names the module list, so the operator is required as well as the operand.
+    _EMPTINESS_TEST = re.compile(r"(?:-s|-z|-n|-eq|-ne|-gt|-ge|-lt|-le)\b")
+    _TEST_BODY = re.compile(r"\[([^\]]*)\]")
+
     def _is_module_list_guard(line: str) -> bool:
         if line.startswith("#") or not re.match(r"^if\b", line):
             return False
-        if re.search(r"(-s\s+[\"']?\$\{?modules\.txt|\!\s*-s\b)", line):
+        if not _EMPTINESS_TEST.search(line):
+            return False
+        # The operands are read from the whole bracketed test rather than from after the operator,
+        # because a numeric comparison puts the value under test BEFORE it: `if [ "$count" -eq 0 ]`
+        # tests `$count`, and a pattern that looked right of the operator found `0` there and read
+        # that as the variable. Both spellings of every variable are normalised, since bash writes
+        # the same one four ways and the check is about which value is tested, not how.
+        body = " ".join(_TEST_BODY.findall(line)) or line
+        if "modules.txt" in body:
             return True
-        tested = re.findall(r"\$\{?(\w+)\}?", line)
-        return any(
-            re.search(rf"-e[ql]\s+0\b", line) and variable in count_vars for variable in tested
-        )
+        return any(name in count_vars for name in re.findall(r"\$\{?(\w+)\}?", body))
 
     guard_at = next((i for i, line in enumerate(build_lines) if _is_module_list_guard(line)), None)
     assert guard_at is not None, (
         "the build step must refuse an empty module list before building anything. An empty list "
         "is the same silent no-op the process-substitution form had, one level up: nothing is "
         "built and the step passes. The go, dependency-scan and integration jobs each refuse it, "
-        "and this step has to as well. Accepted forms are a conditional on `modules.txt` itself or "
-        f"on one of the module counts this step computes ({sorted(count_vars) or 'none found'})"
+        "and this step has to as well. Accepted forms are an emptiness test -s, -eq, -z and their "
+        "relatives - whose operand is `modules.txt` itself or one of the module counts this step "
+        f"computes ({sorted(count_vars) or 'none found'}). A test on any other value is a "
+        "different check, however it is spelled"
     )
     assert guard_at < loop_at, (
         "the empty-list refusal is at line "
@@ -575,8 +588,37 @@ def _without_module_list_guard(run: str) -> str:
             'while read -r m; do\n  go build "./$m/..."\ndone < modules.txt\n',
             "must refuse an empty module list",
         ),
+        # The hole this control exists for. `if [ ! -s "$other" ]` is a real emptiness check on a
+        # real file, and an earlier version accepted it because the line contained `-s` negated
+        # without looking at what was negated. The module list is never tested, so an empty list
+        # builds nothing and the step reports success - the exact failure the guard is for. The
+        # rejection is on the operand, not on the spelling: `modules.txt` and the count still pass.
+        (
+            'set -euo pipefail\ngo work edit -json | jq -r \'.Use[].DiskPath\' > modules.txt\n'
+            'count="$(wc -l < modules.txt)"\nif [ ! -s "$GITHUB_ENV" ]; then\n  exit 1\nfi\n'
+            'while read -r m; do\n  go build "./$m/..."\ndone < modules.txt\n',
+            "must refuse an empty module list",
+        ),
+        # The same test written with a different operator, on a value this step never computed.
+        # Measured against the previous implementation rather than assumed: that one already
+        # rejected it, because it required `-eq 0` literally. It stays as a control because this
+        # change replaces that literal with a set of numeric operators and reads operands from the
+        # whole bracketed test, which is exactly the kind of rewrite that reintroduces the hole -
+        # so it pins the rejection across both implementations instead of only the current one.
+        (
+            'set -euo pipefail\ngo work edit -json | jq -r \'.Use[].DiskPath\' > modules.txt\n'
+            'count="$(wc -l < modules.txt)"\nif [ "$module_total" -lt 1 ]; then\n  exit 1\nfi\n'
+            'while read -r m; do\n  go build "./$m/..."\ndone < modules.txt\n',
+            "must refuse an empty module list",
+        ),
     ],
-    ids=["guard-removed", "guard-replaced-by-a-comment", "guard-on-an-unrelated-variable"],
+    ids=[
+        "guard-removed",
+        "guard-replaced-by-a-comment",
+        "guard-on-an-unrelated-variable",
+        "negated-size-test-on-an-unrelated-file",
+        "comparison-against-a-limit-this-step-never-computed",
+    ],
 )
 def test_the_sast_empty_list_refusal_check_rejects_each_way_of_losing_it(
     workflow: dict, replace: str | None, expected: str
@@ -604,6 +646,54 @@ def test_the_sast_empty_list_refusal_check_rejects_each_way_of_losing_it(
     raise AssertionError(
         "the mutated workflow passed the SAST build check; the check does not detect the defect"
     )
+
+
+@pytest.mark.parametrize(
+    "guard",
+    [
+        # The shipped form.
+        'if [ "$count" -eq 0 ]; then',
+        # The same variable spelled the other three ways bash allows, which is why the operand is
+        # normalised rather than matched literally.
+        'if [ "${count}" -eq 0 ]; then',
+        "if [ \"$count\" -lt 1 ]; then",
+        # A test on the list itself, in both directions and quoted.
+        "if [ ! -s modules.txt ]; then",
+        'if [ ! -s "modules.txt" ]; then',
+        'if [ -z "$(cat modules.txt)" ]; then',
+        # The count tested for emptiness rather than compared to zero.
+        'if [ ! -s "$count" ]; then',
+    ],
+    ids=[
+        "the-shipped-comparison",
+        "braced-variable",
+        "less-than-one",
+        "negated-size-test-on-modules-txt",
+        "quoted-modules-txt",
+        "empty-substitution-over-modules-txt",
+        "negated-size-test-on-the-count",
+    ],
+)
+def test_the_sast_empty_list_check_accepts_every_spelling_of_a_real_refusal(
+    workflow: dict, guard: str
+) -> None:
+    """The other direction, because a rule tightened against one hole can be tightened into another.
+
+    Rejecting the negated `-s` test on an unrelated file is only a fix if it still accepts the
+    negated `-s` test on `modules.txt`, which is the more natural spelling of the same refusal and
+    the one a workflow rewrite would most likely reach for. A rule that refuses everything is green
+    on every mutation and useless on the real workflow, and the only way to tell those apart is to
+    state the accepted forms and assert each one.
+    """
+    head = (
+        "set -euo pipefail\ngo work edit -json | jq -r '.Use[].DiskPath' > modules.txt\n"
+        'count="$(wc -l < modules.txt)"\n'
+    )
+    tail = (
+        "\nwhile read -r m; do\n  go build \"./$m/...\"\ndone < modules.txt\n"
+    )
+    mutated = _mutate_sast_build_step(workflow, f"{head}{guard}\n  exit 1\nfi\n{tail}")
+    test_the_go_sast_leg_builds_every_workspace_module_rather_than_autobuilding_the_root(mutated)
 
 
 GITLEAKS_CONFIG = REPO_ROOT / ".gitleaks.toml"
