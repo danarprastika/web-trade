@@ -1,15 +1,15 @@
 {
   "gate": "G0",
   "verdict": "PENDING_HUMAN_ATTESTATION",
-  "commit": "f24f78437a78b27de982a4d09c2f14d9c3a8eb2b",
+  "commit": "4bdb45b6e919f989085058ce7b7fc7410efcbeb6",
   "docs_dirty": false,
-  "executed_at": "2026-10-04T12:30:08Z",
+  "executed_at": "2026-10-04T15:18:56Z",
   "executed_by": "scripts/verify_spec_gate.py",
   "human_reviewer": null,
   "attested_payload": {
     "gate": "G0",
     "specification": "docs/11_EXECUTION_GATES.md section G0",
-    "commit": "f24f78437a78b27de982a4d09c2f14d9c3a8eb2b",
+    "commit": "4bdb45b6e919f989085058ce7b7fc7410efcbeb6",
     "manifest": "AI_Trading_Company_FINAL_PRODUCTION_BLUEPRINT",
     "criteria": [
       {
