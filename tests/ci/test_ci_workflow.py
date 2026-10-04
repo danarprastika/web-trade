@@ -2755,3 +2755,100 @@ def test_a_well_configured_worker_outside_the_repository_is_still_reported(
         f"expected the problem to name a directory outside the repository, got:\n"
         + "\n".join(problems)
     )
+
+
+# --- The integration job must migrate before it tests (WI-107) -------------------
+
+# The suite reads tables it never creates. See the control's docstring for why that is a pipeline
+# defect rather than a local inconvenience.
+
+
+def _integration_job_steps(workflow: dict) -> list[dict]:
+    job = workflow.get("jobs", {}).get("integration")
+    assert isinstance(job, dict), "the workflow has no integration job to check"
+    steps = job.get("steps")
+    assert isinstance(steps, list) and steps, "the integration job has no steps"
+    return [step for step in steps if isinstance(step, dict)]
+
+
+def _migration_and_test_step_indexes(steps: list[dict]) -> tuple[int | None, int | None]:
+    """Where the job migrates, and where it runs the suite - or None for either.
+
+    Order is returned rather than a boolean because the whole content of the rule is that the
+    migration comes first. A job that migrates somewhere in the file is not the same as a job that
+    migrates before the tests read the schema, and a boolean cannot tell those apart.
+    """
+    up_index: int | None = None
+    test_index: int | None = None
+    for index, step in enumerate(steps):
+        run = str(step.get("run", ""))
+        if up_index is None and re.search(r"migrate\b[^\n]*-direction\s+up", run):
+            up_index = index
+        if test_index is None and "go test -tags=integration" in run:
+            test_index = index
+    return up_index, test_index
+
+
+def test_the_integration_job_applies_migrations_before_it_runs_the_suite(workflow: dict) -> None:
+    """The integration job must create the schema the suite reads, before it reads it.
+
+    The job's postgres service is created fresh on every run, so the database starts empty every
+    time. `migrate -direction status` issues no DDL by design, and the integration harness opens a
+    connection without migrating, so nothing in the pipeline ever applied a migration to the database
+    the tests use. Every run therefore failed with `relation "audit_records" does not exist`, in
+    every package that touches durable storage.
+
+    It was invisible for as long as the toolchain job was red, because `needs: toolchain` skipped
+    all eleven dependent jobs rather than running them and failing them. That is the cost of a gate
+    that blocks: a red gate hides every gate behind it, so fixing one exposes the next rather than
+    ending the search.
+
+    This asserts the precondition exists and precedes the suite. It is deliberately not satisfied by
+    a migration anywhere in the job, and not satisfied by `status`, because a job that migrates
+    after the tests has changed nothing for them.
+    """
+    steps = _integration_job_steps(workflow)
+    up_index, test_index = _migration_and_test_step_indexes(steps)
+
+    assert test_index is not None, (
+        "the integration job no longer runs `go test -tags=integration`, so this rule is not "
+        "examining anything and must not pass"
+    )
+    assert up_index is not None, (
+        "the integration job never applies a migration. Its postgres service is fresh on every run, "
+        "`status` issues no DDL by design, and the harness does not migrate, so the tables the "
+        "suite reads will not exist:\n"
+        + "\n".join(str(step.get("name", "(unnamed)")) for step in steps)
+    )
+    assert up_index < test_index, (
+        f"the migration is at step {up_index} and the suite runs at step {test_index}; a migration "
+        "that happens after the tests have already read the schema does not help them"
+    )
+
+
+def test_an_integration_job_that_never_migrates_is_reported(
+    workflow: dict,
+) -> None:
+    """The negative control, without which the rule above could be satisfied by a job that checks nothing.
+
+    It removes the migration from a copy of the job and requires the rule to notice. A rule that
+    passes on a workflow with no migration in it is not a rule about migrations.
+    """
+    mutated = copy.deepcopy(workflow)
+    steps = _integration_job_steps(mutated)
+    removed = 0
+    for step in steps:
+        run = step.get("run")
+        if not isinstance(run, str) or "-direction up" not in run:
+            continue
+        step["run"] = re.sub(r"[^\n]*migrate\b[^\n]*-direction\s+up[^\n]*\n?", "", run)
+        removed += 1
+    assert removed, "the mutation did not find a migration step to remove, so it proved nothing"
+
+    up_index, test_index = _migration_and_test_step_indexes(steps)
+
+    assert test_index is not None, "the mutation removed the suite too, so it proved nothing"
+    assert up_index is None, (
+        f"a migration is still present at step {up_index} after every line mentioning one was "
+        "removed, so the rule is reading something other than the job"
+    )

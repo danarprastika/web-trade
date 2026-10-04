@@ -1033,7 +1033,7 @@ jobs:
         run: |
           "$(go env GOPATH)/bin/sqlc" vet
 
-      - name: the live database is actually reachable
+      - name: the live database is reachable and migrated
         # The integration suite skips rather than fails when DATABASE_URL is absent, so that a
         # developer running the tag locally without a database sees a skip instead of a false
         # failure. That is the right default and it is deliberate.
@@ -1048,12 +1048,30 @@ jobs:
         # A check that reports success having executed none of itself is the failure mode this
         # repository has now recorded three times, so the invariant is checked rather than
         # assumed.
+        #
+        # The migration run is here because nothing else applied one. This job's postgres service
+        # is created fresh on every run, `status` issues no DDL by design, and the integration
+        # harness connects without migrating - so the tables the suite reads did not exist, and
+        # the suite failed with "relation \"audit_records\" does not exist" on every run. It was
+        # hidden for as long as the toolchain job was red, because `needs: toolchain` skipped all
+        # eleven dependent jobs; fixing that gate exposed it.
+        #
+        # Locally this looked intermittent rather than deterministic, and the intermittency is
+        # worth recording: the integration package's own destructive-migration test reverts and
+        # re-applies the shared schema, so a second local run found the tables already present and
+        # passed. The order the two facts arrived in was the only thing that differed. A fresh
+        # database - which is what CI has every time - always failed.
+        #
+        # `up` is idempotent: the migrator takes an advisory lock and skips versions already
+        # recorded as applied, so this is a no-op on an already-migrated database and cannot race
+        # itself if the step is ever re-run.
         run: |
           set -euo pipefail
           test -n "${DATABASE_URL:-}" || {
             echo "::error::DATABASE_URL is not set; every integration test would skip and this job would pass without running any of them"
             exit 1
           }
+          go run ./services/control-plane/cmd/migrate -direction up
           go run ./services/control-plane/cmd/migrate -direction status
 
       - name: integration tests
