@@ -16,8 +16,8 @@ readme = "README.md"
 # that produced it must agree numerically; a version skew between them would make a result
 # irreproducible, and an irreproducible result cannot be promoted (docs/11, G4).
 dependencies = [
-    "numpy==2.5.1",
-    "pydantic==2.12.4",
+    "numpy==2.5.3",
+    "pydantic==2.13.5",
     # The dataset is produced by the research worker and consumed here, so this is a real
     # dependency rather than a convenience import. It is a local workspace package, not a PyPI
     # release, and is installed from this repository. The version is pinned for the same
@@ -33,10 +33,10 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest==9.0.1",
-    "ruff==0.15.1",
-    "mypy==1.19.1",
-    "hypothesis==6.151.1",
+    "pytest==9.1.1",
+    "ruff==0.16.10",
+    "mypy==2.4.0",
+    "hypothesis==6.168.3",
 ]
 
 [tool.hatch.build.targets.wheel]
