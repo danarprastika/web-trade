@@ -17,15 +17,15 @@ readme = "README.md"
 # deliberately absent from any authoritative path. Authoritative financial arithmetic
 # is Go plus PostgreSQL decimal; no float crosses a financial contract (docs/03).
 dependencies = [
-    "numpy==2.5.1",
-    "pydantic==2.12.4",
+    "numpy==2.5.3",
+    "pydantic==2.13.5",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest==9.0.1",
-    "ruff==0.15.1",
-    "mypy==1.19.1",
+    "pytest==9.1.1",
+    "ruff==0.16.10",
+    "mypy==2.4.0",
     # test_schema_layer_rejects_document_cases in tests/test_canonical.py runs
     # tests/contracts/validate_contracts.py as a subprocess, so these are the two packages that
     # test actually executes: the validator imports jsonschema for validation and `referencing`
