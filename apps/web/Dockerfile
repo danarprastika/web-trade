@@ -17,7 +17,7 @@
 
 # Pinned to an exact patch tag. Never `latest`: the image tag is part of the artifact
 # identity and must be reproducible. Verified present in library/node on 2026-09-28.
-FROM node:24.18.0-alpine AS build
+FROM node:26.10.0-alpine AS build
 WORKDIR /app
 
 # Dependencies are installed from the committed lockfile in a layer of their own, so a
@@ -35,7 +35,7 @@ RUN npm run build
 
 # ---------------------------------------------------------------------------
 
-FROM node:24.18.0-alpine AS runtime
+FROM node:26.10.0-alpine AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production \
